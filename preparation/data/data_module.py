@@ -7,6 +7,8 @@
 import torch
 import torchaudio
 import torchvision
+import os
+from pathlib import Path
 
 
 class AVSRDataLoader:
@@ -43,7 +45,12 @@ class AVSRDataLoader:
             return video
 
     def load_audio(self, data_filename):
-        waveform, sample_rate = torchaudio.load(data_filename, normalize=True)
+        # waveform, sample_rate = torchaudio.load(data_filename, normalize=True)
+        #save temperorary file with ffmpeg
+        command = "ffmpeg -i {} -y {}".format(data_filename, data_filename.replace(".mp4", ".wav"))
+        os.system(command)
+        waveform, sample_rate = torchaudio.load(data_filename.replace(".mp4", ".wav"), normalize=True)
+        Path(data_filename.replace(".mp4", ".wav")).unlink()
         return waveform, sample_rate
 
     def load_video(self, data_filename):

@@ -5,7 +5,8 @@ import os
 import pickle
 import shutil
 import warnings
-
+from pathlib import Path
+import time
 import ffmpeg
 from data.data_module import AVSRDataLoader
 from tqdm import tqdm
@@ -82,8 +83,37 @@ seg_duration = args.seg_duration
 dataset = args.dataset
 text_transform = TextTransform()
 
+
+def extract_archive(datasetPath):
+    datasetPath = Path(datasetPath)
+    savePath = Path("/tmp/")
+    if datasetPath.suffix == ".zip":
+        import zipfile
+
+        with zipfile.ZipFile(datasetPath, "r") as zip_ref:
+            zip_ref.extractall(savePath)
+    elif datasetPath.suffix == ".tar":
+        import tarfile
+
+        with tarfile.open(datasetPath, "r") as tar_ref:
+            tar_ref.extractall(savePath)
+    else:
+        raise NotImplementedError
+    print(f"Extracted {datasetPath} to {savePath}")
+    return savePath
+
 # Load Data
 args.data_dir = os.path.normpath(args.data_dir)
+if dataset == "lrs3":
+    if args.subset == "train":
+        extract_archive(Path(args.data_dir)/"lrs3_pretrain.zip")
+        extract_archive(Path(args.data_dir)/"lrs3_trainval.zip")
+    elif args.subset == "test":
+        extract_archive(Path(args.data_dir)/"lrs3_test_v0.4.zip")
+args.data_dir = os.path.normpath("/tmp/")
+if Path(args.landmarks_dir).suffix == ".zip" or Path(args.landmarks_dir).suffix == ".tar":
+    args.landmarks_dir = os.path.normpath(extract_archive(args.landmarks_dir))
+    args.landmarks_dir = os.path.join(args.landmarks_dir, "LRS3_landmarks")
 vid_dataloader = AVSRDataLoader(
     modality="video", detector=args.detector, convert_gray=False
 )
@@ -160,7 +190,7 @@ elif dataset == "lrs2":
 
 unit = math.ceil(len(filenames) * 1.0 / args.groups)
 filenames = filenames[args.job_index * unit : (args.job_index + 1) * unit]
-
+tarFile = Path(args.root_dir)/f"{dataset}_{args.subset}_seg{seg_duration}s.tar"
 for data_filename in tqdm(filenames):
     if args.landmarks_dir:
         landmarks_filename = (
@@ -241,6 +271,12 @@ for data_filename in tqdm(filenames):
                 f"{dataset},{basename},{trim_vid_data.shape[0]},{token_id_str}"
             )
         )
+        #add files to tar file 
+        command = f"tar -rf {tarFile} {dst_vid_filename} {dst_aud_filename} {dst_txt_filename}"
+        os.system(command)
+        Path(dst_vid_filename).unlink()
+        Path(dst_aud_filename).unlink()
+        Path(dst_txt_filename).unlink()
         continue
 
     splitted = split_file(data_filename[:-4] + ".txt", max_frames=seg_vid_len)
@@ -313,4 +349,9 @@ for data_filename in tqdm(filenames):
                     f"{dataset},{basename},{trim_vid_data.shape[0]},{token_id_str}"
                 )
             )
+        command = f"tar -rf {tarFile} {dst_vid_filename} {dst_aud_filename} {dst_txt_filename}"
+        os.system(command)
+        Path(dst_vid_filename).unlink()
+        Path(dst_aud_filename).unlink()
+        Path(dst_txt_filename).unlink()
 f.close()
