@@ -8,6 +8,8 @@ import warnings
 from pathlib import Path
 import time
 import ffmpeg
+import fcntl
+from time import sleep
 from data.data_module import AVSRDataLoader
 from tqdm import tqdm
 from transforms import TextTransform
@@ -84,36 +86,63 @@ dataset = args.dataset
 text_transform = TextTransform()
 
 
-def extract_archive(datasetPath):
+def atomic_touch(file_path):
+    with open(file_path, 'a') as f:
+        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+def extract_archive(datasetPath, datasetDescription):
     datasetPath = Path(datasetPath)
-    savePath = Path("/tmp/")
-    if datasetPath.suffix == ".zip":
-        import zipfile
+    savePath = Path("/tmp/") / datasetDescription
+    savePath.mkdir(parents=True, exist_ok=True)
+    workingFile = savePath / f"{datasetPath.stem}working.txt"
+    doneFile = savePath / f"{datasetPath.stem}done.txt"
 
-        with zipfile.ZipFile(datasetPath, "r") as zip_ref:
-            zip_ref.extractall(savePath)
-    elif datasetPath.suffix == ".tar":
-        import tarfile
+    try:
+        atomic_touch(workingFile)
+        if not doneFile.exists():
+            print("Extracting dataset...")
 
-        with tarfile.open(datasetPath, "r") as tar_ref:
-            tar_ref.extractall(savePath)
-    else:
-        raise NotImplementedError
-    print(f"Extracted {datasetPath} to {savePath}")
+            if datasetPath.is_file() and datasetPath.suffix in [".zip", ".tar"]:
+                if datasetPath.suffix == ".zip":
+                    import zipfile
+                    with zipfile.ZipFile(datasetPath, "r") as zip_ref:
+                        zip_ref.extractall(savePath)
+                elif datasetPath.suffix == ".tar":
+                    import tarfile
+                    with tarfile.open(datasetPath, "r") as tar_ref:
+                        tar_ref.extractall(savePath)
+
+                doneFile.touch()
+                print("Dataset extracted.")
+            else:
+                raise FileNotFoundError(f"No archive found at {datasetPath}")
+        else:
+            print("Dataset already extracted.")
+    except IOError:
+        print("Waiting for dataset extraction...")
+        while not doneFile.exists():
+            sleep(10)
+        print("Dataset extracted.")
+    finally:
+        if workingFile.exists():
+            workingFile.unlink()
+
     return savePath
 
 # Load Data
 args.data_dir = os.path.normpath(args.data_dir)
+datasetDescription = args.dataset # You need to define this or pass it along with datasetPath
 if dataset == "lrs3":
     if args.subset == "train":
-        extract_archive(Path(args.data_dir)/"lrs3_pretrain.zip")
-        extract_archive(Path(args.data_dir)/"lrs3_trainval.zip")
+        extract_archive(Path(args.data_dir)/"lrs3_pretrain.zip", datasetDescription)
+        extract_archive(Path(args.data_dir)/"lrs3_trainval.zip", datasetDescription)
     elif args.subset == "test":
-        extract_archive(Path(args.data_dir)/"lrs3_test_v0.4.zip")
-args.data_dir = os.path.normpath("/tmp/")
+        extract_archive(Path(args.data_dir)/"lrs3_test_v0.4.zip", datasetDescription)
+
+args.data_dir = os.path.normpath(f"/tmp/{datasetDescription}")
 if Path(args.landmarks_dir).suffix == ".zip" or Path(args.landmarks_dir).suffix == ".tar":
-    args.landmarks_dir = os.path.normpath(extract_archive(args.landmarks_dir))
-    args.landmarks_dir = os.path.join(args.landmarks_dir, "LRS3_landmarks")
+    args.landmarks_dir = os.path.normpath(extract_archive(args.landmarks_dir, datasetDescription))
+    args.landmarks_dir = os.path.join(args.landmarks_dir, f"LRS3_landmarks")
 vid_dataloader = AVSRDataLoader(
     modality="video", detector=args.detector, convert_gray=False
 )
@@ -190,7 +219,7 @@ elif dataset == "lrs2":
 
 unit = math.ceil(len(filenames) * 1.0 / args.groups)
 filenames = filenames[args.job_index * unit : (args.job_index + 1) * unit]
-tarFile = Path(args.root_dir)/f"{dataset}_{args.subset}_seg{seg_duration}s.tar"
+tarFile = Path(label_filename).with_suffix(".tar")
 for data_filename in tqdm(filenames):
     if args.landmarks_dir:
         landmarks_filename = (
