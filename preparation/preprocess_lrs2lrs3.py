@@ -132,6 +132,16 @@ def extract_archive(datasetPath, datasetDescription):
 # Load Data
 args.data_dir = os.path.normpath(args.data_dir)
 datasetDescription = args.dataset # You need to define this or pass it along with datasetPath
+label_filename = os.path.join(
+    args.root_dir,
+    "labels",
+    f"{dataset}_{args.subset}_transcript_lengths_seg{seg_duration}s.csv"
+    if args.groups <= 1
+    else f"{dataset}_{args.subset}_transcript_lengths_seg{seg_duration}s.{args.groups}.{args.job_index}.csv",
+)
+tarFile = Path(label_filename).with_suffix(".tar")
+if tarFile.exists():
+    exit(0)
 if dataset == "lrs3":
     if args.subset == "train":
         extract_archive(Path(args.data_dir)/"lrs3_pretrain.zip", datasetDescription)
@@ -140,7 +150,7 @@ if dataset == "lrs3":
         extract_archive(Path(args.data_dir)/"lrs3_test_v0.4.zip", datasetDescription)
 
 args.data_dir = os.path.normpath(f"/tmp/{datasetDescription}")
-if Path(args.landmarks_dir).suffix == ".zip" or Path(args.landmarks_dir).suffix == ".tar":
+if args.landmarks_dir and (Path(args.landmarks_dir).suffix == ".zip" or Path(args.landmarks_dir).suffix == ".tar"):
     args.landmarks_dir = os.path.normpath(extract_archive(args.landmarks_dir, datasetDescription))
     args.landmarks_dir = os.path.join(args.landmarks_dir, f"LRS3_landmarks")
 vid_dataloader = AVSRDataLoader(
@@ -152,13 +162,6 @@ seg_vid_len = seg_duration * 25
 seg_aud_len = seg_duration * 16000
 
 # Label filename
-label_filename = os.path.join(
-    args.root_dir,
-    "labels",
-    f"{dataset}_{args.subset}_transcript_lengths_seg{seg_duration}s.csv"
-    if args.groups <= 1
-    else f"{dataset}_{args.subset}_transcript_lengths_seg{seg_duration}s.{args.groups}.{args.job_index}.csv",
-)
 os.makedirs(os.path.dirname(label_filename), exist_ok=True)
 print(f"Directory {os.path.dirname(label_filename)} created")
 
@@ -219,7 +222,6 @@ elif dataset == "lrs2":
 
 unit = math.ceil(len(filenames) * 1.0 / args.groups)
 filenames = filenames[args.job_index * unit : (args.job_index + 1) * unit]
-tarFile = Path(label_filename).with_suffix(".tar")
 for data_filename in tqdm(filenames):
     if args.landmarks_dir:
         landmarks_filename = (

@@ -72,7 +72,7 @@ class DataModule(LightningDataModule):
             ),
             subset="train",
             modality=self.cfg.data.modality,
-            audio_transform=AudioTransform("train"),
+            audio_transform=None,#AudioTransform("train"),
             video_transform=VideoTransform("train"),
         )
         sampler = ByFrameCountSampler(train_ds, self.cfg.data.max_frames)
@@ -89,7 +89,7 @@ class DataModule(LightningDataModule):
             label_path=os.path.join(ds_args.root_dir, ds_args.label_dir, ds_args.val_file),
             subset="val",
             modality=self.cfg.data.modality,
-            audio_transform=AudioTransform("val"),
+            audio_transform=None,#AudioTransform("val"),
             video_transform=VideoTransform("val"),
         )
         sampler = ByFrameCountSampler(
@@ -106,9 +106,9 @@ class DataModule(LightningDataModule):
             label_path=os.path.join(ds_args.root_dir, ds_args.label_dir, ds_args.test_file),
             subset="test",
             modality=self.cfg.data.modality,
-            audio_transform=AudioTransform(
-                "test", snr_target=self.cfg.decode.snr_target
-            ),
+            audio_transform=None,#AudioTransform(
+            #     "test", snr_target=self.cfg.decode.snr_target
+            # ),
             video_transform=VideoTransform("test"),
         )
         dataloader = torch.utils.data.DataLoader(dataset, batch_size=None)
