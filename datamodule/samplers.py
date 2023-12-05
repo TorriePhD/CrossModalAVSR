@@ -10,10 +10,13 @@ from torch.utils.data.sampler import Sampler
 
 
 class ByFrameCountSampler(Sampler):
-    def __init__(self, dataset, max_frames_per_gpu, shuffle=True, seed=0):
+    def __init__(self, dataset, max_frames_per_gpu, shuffle=True, seed=0,modality = "audiovisual"):
         self.dataset = dataset
         self.max_frames_per_gpu = max_frames_per_gpu
-        self.sizes = [item[2] for item in self.dataset.list]
+        if modality == "audiovisual":
+            self.sizes = [item[3] for item in self.dataset.list]
+        else:
+            self.sizes = [item[2] for item in self.dataset.list]
 
         self.shuffle = shuffle
         self.seed = seed

@@ -23,6 +23,10 @@ class ModelModule(LightningModule):
             self.backbone_args = self.cfg.model.audio_backbone
         elif self.cfg.data.modality == "video":
             self.backbone_args = self.cfg.model.visual_backbone
+        elif self.cfg.data.modality == "audiovisual":
+            self.backbone_args["audio_backbone"] = self.cfg.model.audio_backbone
+            self.backbone_args["visual_backbone"] = self.cfg.model.visual_backbone
+            self.backbone_args["fusion"] = self.cfg.model.fusion
 
         self.text_transform = TextTransform()
         self.token_list = self.text_transform.token_list
@@ -52,7 +56,11 @@ class ModelModule(LightningModule):
 
     def forward(self, sample):
         self.beam_search = get_beam_search_decoder(self.model, self.token_list)
-        enc_feat, _ = self.model.encoder(sample.unsqueeze(0).to(self.device), None)
+        if self.cfg.data.modality == "audiovisual":
+            modalities = self.model.getModalitites(sample)
+            enc_feat, _ = self.model.getCrossModalFeatures(sample, modalities,None)
+        else:
+            enc_feat, _ = self.model.encoder(sample.unsqueeze(0).to(self.device), None)
         enc_feat = enc_feat.squeeze(0)
 
         nbest_hyps = self.beam_search(enc_feat)
@@ -68,7 +76,11 @@ class ModelModule(LightningModule):
         return self._step(batch, batch_idx, step_type="val")
 
     def test_step(self, sample, sample_idx):
-        enc_feat, _ = self.model.encoder(sample["input"].unsqueeze(0).to(self.device), None)
+        if modality == "audiovisual":
+            modalities = self.model.getModalitites(sample)
+            enc_feat, _ = self.model.getCrossModalFeatures(sample, modalities,None)
+        else:
+            enc_feat, _ = self.model.encoder(sample["input"].unsqueeze(0).to(self.device), None)
         enc_feat = enc_feat.squeeze(0)
 
         nbest_hyps = self.beam_search(enc_feat)

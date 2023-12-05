@@ -61,17 +61,32 @@ class AVDataset(torch.utils.data.Dataset):
         paths_counts_labels = []
         for path_count_label in open(label_path).read().splitlines():
             dataset_name, rel_path, input_length, token_id = path_count_label.split(",")
+            if self.modality == "audiovisual":
+                modalities = ["audio", "video", "audiovisual"]
+                for modality in modalities:
+                    paths_counts_labels.append(
+                        (
+                            dataset_name,
+                            rel_path,
+                            int(input_length),
+                            torch.tensor([int(_) for _ in token_id.split()]),
+                            modality
+                        )
+                    )
             paths_counts_labels.append(
                 (
                     dataset_name,
                     rel_path,
                     int(input_length),
                     torch.tensor([int(_) for _ in token_id.split()]),
+
                 )
             )
         return paths_counts_labels
 
     def __getitem__(self, idx):
+        if self.modality == "audiovisual":
+            return self.getitem_audiovisual(idx)
         dataset_name, rel_path, input_length, token_id = self.list[idx]
         path = os.path.join(self.root_dir, dataset_name, rel_path)
         if self.modality == "video":
@@ -82,13 +97,19 @@ class AVDataset(torch.utils.data.Dataset):
             audio = load_audio(path)
             audio = self.audio_transform(audio)
             return {"input": audio, "target": token_id}
-        elif self.modality == "audiovisual":
+
+    def getitem_audiovisual(self, idx):
+        dataset_name, rel_path, input_length, token_id, modality = self.list[idx]
+        path = os.path.join(self.root_dir, dataset_name, rel_path)
+        video = None
+        audio = None
+        if "video" in modality or "visual" in modality:
             video = load_video(path)
+            video = self.video_transform(video)
+        if "audio" in modality:
             audio = load_audio(path)
             audio = cut_or_pad(audio, len(video) * self.rate_ratio)
-            video = self.video_transform(video)
             audio = self.audio_transform(audio)
-            return {"video": video, "audio": audio, "target": token_id}
-
+        return {"video": video, "audio": audio, "target": token_id}
     def __len__(self):
         return len(self.list)
