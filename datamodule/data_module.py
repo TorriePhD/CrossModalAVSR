@@ -36,7 +36,7 @@ def pad(samples, pad_val=0.0):
 
 
 def collate_pad(batch):
-    batch_out = {}
+    batch_out = {} #TODO handle multiple modalities, inputs are set to None if not present, we must replace these with zeros.
     for data_type in batch[0].keys():
         pad_val = -1 if data_type == "target" else 0.0
         c_batch, sample_lengths = pad(
