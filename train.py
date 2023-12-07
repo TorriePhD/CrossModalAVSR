@@ -9,7 +9,7 @@ from pytorch_lightning.plugins import DDPPlugin
 from avg_ckpts import ensemble
 from datamodule.data_module import DataModule
 from lightning import ModelModule
-
+torch.autograd.set_detect_anomaly(True)
 
 @hydra.main(version_base="1.3", config_path="configs", config_name="config")
 def main(cfg):

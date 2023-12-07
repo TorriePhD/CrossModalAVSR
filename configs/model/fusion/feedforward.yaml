@@ -1,3 +1,4 @@
-adim: 512
+adim: 1536
+odim: 768
 hidden_units: 2048
 dropout_rate: 0.1

@@ -24,6 +24,7 @@ class ModelModule(LightningModule):
         elif self.cfg.data.modality == "video":
             self.backbone_args = self.cfg.model.visual_backbone
         elif self.cfg.data.modality == "audiovisual":
+            self.backbone_args = {}
             self.backbone_args["audio_backbone"] = self.cfg.model.audio_backbone
             self.backbone_args["visual_backbone"] = self.cfg.model.visual_backbone
             self.backbone_args["fusion"] = self.cfg.model.fusion

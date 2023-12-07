@@ -14,36 +14,71 @@ from .transforms import AudioTransform, VideoTransform
 
 # https://github.com/facebookresearch/av_hubert/blob/593d0ae8462be128faab6d866a3a926e2955bde1/avhubert/hubert_dataset.py#L517
 def pad(samples, pad_val=0.0):
-    lengths = [len(s) for s in samples]
-    max_size = max(lengths)
-    sample_shape = list(samples[0].shape[1:])
-    collated_batch = samples[0].new_zeros([len(samples), max_size] + sample_shape)
-    for i, sample in enumerate(samples):
-        diff = len(sample) - max_size
-        if diff == 0:
-            collated_batch[i] = sample
+    #if samples[0] is a dictionary call pad on each key
+    if isinstance(samples[0], dict):
+        return {key: pad([s[key] for s in samples], pad_val) for key in samples[0].keys()}
+    lengths = []
+    for s in samples:
+        if s is not None:
+            lengths.append(len(s))
         else:
-            collated_batch[i] = torch.cat(
-                [sample, sample.new_full([-diff] + sample_shape, pad_val)]
-            )
-    if len(samples[0].shape) == 1:
+            lengths.append(0)
+    max_size = max(lengths)
+    sample_shape = None
+    for sample in samples:
+        if sample is not None:
+            sample_shape = list(sample.shape[1:])
+            lenSampleShape = len(sample.shape)
+            collated_batch = sample.new_zeros([len(samples), max_size] + sample_shape)
+            break
+    if sample_shape is None:
+        #no samples in batch
+        collated_batch = torch.zeros([len(samples), 1,max_size])
+        return collated_batch, lengths
+    for i, sample in enumerate(samples):
+        if sample is None:
+            diff = max_size
+            #set it to zeros
+            collated_batch[i] = torch.zeros([max_size] + sample_shape)
+        else:
+            diff = len(sample) - max_size
+            if diff == 0:
+                collated_batch[i] = sample
+            else:
+                collated_batch[i] = torch.cat(
+                    [sample, sample.new_full([-diff] + sample_shape, pad_val)]
+                )
+    if lenSampleShape == 1:
         collated_batch = collated_batch.unsqueeze(1)  # targets
-    elif len(samples[0].shape) == 2:
+    elif lenSampleShape == 2:
         pass  # collated_batch: [B, T, 1]
-    elif len(samples[0].shape) == 4:
+    elif lenSampleShape == 4:
         pass  # collated_batch: [B, T, C, H, W]
     return collated_batch, lengths
 
 
 def collate_pad(batch):
-    batch_out = {} #TODO handle multiple modalities, inputs are set to None if not present, we must replace these with zeros.
+    batch_out = {} 
     for data_type in batch[0].keys():
         pad_val = -1 if data_type == "target" else 0.0
-        c_batch, sample_lengths = pad(
+        outputs = pad(
             [s[data_type] for s in batch if s[data_type] is not None], pad_val
         )
-        batch_out[data_type + "s"] = c_batch
-        batch_out[data_type + "_lengths"] = torch.tensor(sample_lengths)
+        #if type of ouptus is list
+        if isinstance(outputs, tuple):
+            c_batch, sample_lengths = outputs
+            batch_out[data_type + "s"] = c_batch
+            batch_out[data_type + "_lengths"] = torch.tensor(sample_lengths)
+        else:
+            #else it is a dictionary and we need to unpack it
+            c_batch = {}
+            sample_lengths = {}
+            for key in outputs.keys():
+                c_batch[key], sample_lengths[key] = outputs[key]
+                sample_lengths[key] = torch.tensor(sample_lengths[key])
+            batch_out[data_type + "s"] = c_batch
+            batch_out[data_type + "_lengths"] = sample_lengths
+        
     return batch_out
 
 

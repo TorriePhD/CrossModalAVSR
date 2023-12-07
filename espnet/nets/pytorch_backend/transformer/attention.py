@@ -73,6 +73,7 @@ class MultiHeadedAttention(nn.Module):
             min_value = float(
                 numpy.finfo(torch.tensor(0, dtype=scores.dtype).numpy().dtype).min
             )
+            print(scores.shape, mask.shape, min_value)
             scores = scores.masked_fill(mask, min_value)
             self.attn = torch.softmax(scores, dim=-1).masked_fill(
                 mask, 0.0

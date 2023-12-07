@@ -73,14 +73,15 @@ class AVDataset(torch.utils.data.Dataset):
                             modality
                         )
                     )
-            paths_counts_labels.append(
-                (
-                    dataset_name,
-                    rel_path,
-                    int(input_length),
-                    torch.tensor([int(_) for _ in token_id.split()]),
+            else:
+                paths_counts_labels.append(
+                    (
+                        dataset_name,
+                        rel_path,
+                        int(input_length),
+                        torch.tensor([int(_) for _ in token_id.split()]),
 
-                )
+                    )
             )
         return paths_counts_labels
 
@@ -108,8 +109,7 @@ class AVDataset(torch.utils.data.Dataset):
             video = self.video_transform(video)
         if "audio" in modality:
             audio = load_audio(path)
-            audio = cut_or_pad(audio, len(video) * self.rate_ratio)
             audio = self.audio_transform(audio)
-        return {"video": video, "audio": audio, "target": token_id}
+        return {"input":{"video": video, "audio": audio}, "target": token_id}
     def __len__(self):
         return len(self.list)
