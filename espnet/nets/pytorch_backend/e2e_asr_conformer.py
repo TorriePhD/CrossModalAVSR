@@ -208,8 +208,8 @@ class E2E(torch.nn.Module):
             enc_feat[combined_mask] = x_combined
             vid_mask[combined_mask] = 0
             aud_mask[combined_mask] = 0
-        enc_feat[vid_mask] += combined_vid[vid_mask]
-        enc_feat[aud_mask] += combined_aud[aud_mask]
+        enc_feat[vid_mask] = combined_vid[vid_mask]
+        enc_feat[aud_mask] = combined_aud[aud_mask]
             
         return enc_feat
     def forward_crossmodal(self, x, lengths, label):
