@@ -141,6 +141,7 @@ label_filename = os.path.join(
 )
 tarFile = Path(label_filename).with_suffix(".tar")
 if tarFile.exists():
+    print(f"Tar file {tarFile} already exists.")
     exit(0)
 if dataset == "lrs3":
     if args.subset == "train":
