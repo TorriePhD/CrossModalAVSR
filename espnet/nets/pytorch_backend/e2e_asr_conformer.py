@@ -165,7 +165,7 @@ class E2E(torch.nn.Module):
 
         return loss, loss_ctc, loss_att, acc
     def getModalitites(self, x):
-        modality = torch.zeros(x['video'].size(0), dtype=torch.long, device="cuda")
+        modality = torch.zeros(x['video'].size(0), dtype=torch.long, device=x["video"].device)
         # Determine modality by where video and audio are present (all zeros if not present)
         #check if video is all zeros
         whereVideo = x['video'].sum(dim=(1,2,3,4)) != 0
@@ -176,9 +176,9 @@ class E2E(torch.nn.Module):
         return modality
     def getCrossModalFeatures(self, x, modality, padding_mask):
         # Initialize combined features tensor
-        combined_vid = torch.zeros(modality.size(0), x['video'].size(1),768, device=modality.device)
-        combined_aud = torch.zeros_like(combined_vid, device=modality.device)
-        enc_feat = torch.zeros_like(combined_vid, device=modality.device)
+        combined_vid = torch.zeros(modality.size(0), x['video'].size(1),768, device=x["video"].device)
+        combined_aud = torch.zeros_like(combined_vid, device=x["video"].device)
+        enc_feat = torch.zeros_like(combined_vid, device=x["video"].device)
         vid_mask = (modality == 0) | (modality == 2)
         if vid_mask.any():
             vidPaddingMask = None
