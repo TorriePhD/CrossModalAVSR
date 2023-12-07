@@ -236,4 +236,16 @@ class E2E(torch.nn.Module):
         acc = th_accuracy(
             pred_pad.view(-1, self.odim), ys_out_pad, ignore_label=self.ignore_id
         )
-        return loss, loss_ctc, loss_att, acc
+        audioIndexes = modality == 1
+        videoIndexes = modality == 0
+        audiovisualIndexes = modality == 2
+        audioOnlyAcc = th_accuracy(
+            pred_pad[audioIndexes].view(-1, self.odim), ys_out_pad[audioIndexes], ignore_label=self.ignore_id
+        )
+        videoOnlyAcc = th_accuracy(
+            pred_pad[videoIndexes].view(-1, self.odim), ys_out_pad[videoIndexes], ignore_label=self.ignore_id
+        )
+        audiovisualAcc = th_accuracy(
+            pred_pad[audiovisualIndexes].view(-1, self.odim), ys_out_pad[audiovisualIndexes], ignore_label=self.ignore_id
+        )
+        return loss, loss_ctc, loss_att, acc,audioOnlyAcc,videoOnlyAcc,audiovisualAcc
