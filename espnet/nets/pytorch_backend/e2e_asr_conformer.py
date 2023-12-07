@@ -33,8 +33,10 @@ class E2E(torch.nn.Module):
         if isinstance(args, dict):
             self.crossmodal = True
             self.encoder = {}
-            self.encoder["audio"] = self.createEncoder(args["audio_backbone"]).to("cuda")
-            self.encoder["video"] = self.createEncoder(args["visual_backbone"]).to("cuda")
+            self.encoder["audio"] = self.createEncoder(args["audio_backbone"])
+            self.encoder["video"] = self.createEncoder(args["visual_backbone"])
+            self.audioEcoder = self.encoder["audio"]
+            self.videoEncoder = self.encoder["video"]
             self.transformer_input_layer = {}
             self.transformer_input_layer["audio"] = args["audio_backbone"].transformer_input_layer
             self.transformer_input_layer["video"] = args["visual_backbone"].transformer_input_layer
