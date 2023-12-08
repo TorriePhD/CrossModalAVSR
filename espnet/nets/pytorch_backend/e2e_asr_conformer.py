@@ -207,7 +207,7 @@ class E2E(torch.nn.Module):
             x_combined = torch.cat((combined_vid[combined_mask], combined_aud[combined_mask]), dim=2)
             x_combined = self.fusion(x_combined)
             combined_vid[combined_mask] = x_combined
-        combined_vid[aud_mask] = combined_aud[aud_mask]            
+        combined_vid[modality==1] = combined_aud[modality==1]            
         return combined_vid
     def forward_crossmodal(self, x, lengths, label):
         if self.transformer_input_layer == "conv1d":
