@@ -23,7 +23,8 @@ class ModelModule(LightningModule):
             self.backbone_args = self.cfg.model.audio_backbone
         elif self.cfg.data.modality == "video":
             self.backbone_args = self.cfg.model.visual_backbone
-
+        elif self.cfg.data.modality == "audiovisual":
+            #TODO add audiovisual backbone support
         self.text_transform = TextTransform()
         self.token_list = self.text_transform.token_list
         self.model = E2E(len(self.token_list), self.backbone_args)
@@ -65,6 +66,7 @@ class ModelModule(LightningModule):
 
     def test_step(self, sample, sample_idx):
         enc_feat, _ = self.model.encoder(sample["input"].unsqueeze(0).to(self.device), None)
+        #TODO add support to test audiovisual
         enc_feat = enc_feat.squeeze(0)
 
         nbest_hyps = self.beam_search(enc_feat)
@@ -80,6 +82,7 @@ class ModelModule(LightningModule):
         return
 
     def _step(self, batch, batch_idx, step_type):
+        #TODO add support to train audiovisual
         loss, loss_ctc, loss_att, acc = self.model(batch["inputs"], batch["input_lengths"], batch["targets"])
         batch_size = len(batch["inputs"])
 

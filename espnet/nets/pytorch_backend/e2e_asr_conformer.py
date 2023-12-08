@@ -22,7 +22,7 @@ from espnet.nets.pytorch_backend.transformer.mask import target_mask
 class E2E(torch.nn.Module):
     def __init__(self, odim, args, ignore_id=-1):
         torch.nn.Module.__init__(self)
-
+        #TODO add audiovisual backbone support
         self.encoder = Encoder(
             attention_dim=args.adim,
             attention_heads=args.aheads,
@@ -89,7 +89,7 @@ class E2E(torch.nn.Module):
         if self.transformer_input_layer == "conv1d":
             lengths = torch.div(lengths, 640, rounding_mode="trunc")
         padding_mask = make_non_pad_mask(lengths).to(x.device).unsqueeze(-2)
-
+        #TODO add audiovisual backbone support
         x, _ = self.encoder(x, padding_mask)
 
         # ctc loss
