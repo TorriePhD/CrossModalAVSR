@@ -178,8 +178,8 @@ class E2E(torch.nn.Module):
         return modality
     def getCrossModalFeatures(self, x, modality, padding_mask):
         # Initialize combined features tensor
-        combined_vid = torch.zeros(modality.size(0), x['video'].size(1),768, device=modality.device)
-        combined_aud = torch.zeros_like(combined_vid, device=modality.device)
+        combined_vid = torch.zeros(modality.size(0), x['video'].size(1),768, device=x["video"].device)
+        combined_aud = torch.zeros_like(combined_vid, device=x["video"].device)
         vid_mask = (modality == 0) | (modality == 2)
         if vid_mask.any():
             vidPaddingMask = None
