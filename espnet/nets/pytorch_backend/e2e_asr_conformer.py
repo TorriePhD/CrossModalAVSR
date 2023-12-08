@@ -167,7 +167,7 @@ class E2E(torch.nn.Module):
 
         return loss, loss_ctc, loss_att, acc
     def getModalitites(self, x):
-        modality = torch.zeros(x['video'].size(0), dtype=torch.long, device=x["video"].device)
+        modality = torch.zeros(x['video'].size(0), dtype=torch.uint8, device=x["video"].device)
         # Determine modality by where video and audio are present (all zeros if not present)
         #check if video is all zeros
         whereVideo = x['video'].sum(dim=(1,2,3,4)) != 0
@@ -177,38 +177,38 @@ class E2E(torch.nn.Module):
         modality[whereVideo & whereAudio] = 2
         return modality
     def getCrossModalFeatures(self, x, modality, padding_mask):
-        # Initialize combined features tensor
-        combined_vid = torch.zeros(modality.size(0), x['video'].size(1),768, device=x["video"].device)
-        combined_aud = torch.zeros_like(combined_vid, device=x["video"].device)
+        vid_features = torch.zeros(modality.size(0), x['video'].size(1), 768, device=x["video"].device)
+        aud_features = torch.zeros_like(vid_features, device=x["video"].device)
+
+        # Process video modality
         vid_mask = (modality == 0) | (modality == 2)
         if vid_mask.any():
-            vidPaddingMask = None
-            if padding_mask is not None:
-                vidPaddingMask = padding_mask["video"][vid_mask]
-            xVid,_ = self.encoder["video"](x['video'][vid_mask], vidPaddingMask)
-            combined_vid[vid_mask] = xVid
-        
-        # Process audio modality if present
+            vidPaddingMask = padding_mask["video"][vid_mask] if padding_mask is not None else None
+            xVid, _ = self.encoder["video"](x['video'][vid_mask], vidPaddingMask)
+            vid_features[vid_mask] = xVid
+
+        # Process audio modality
         aud_mask = (modality == 1) | (modality == 2)
         if aud_mask.any():
-            audPaddingMask = None
-            if padding_mask is not None:
-                audPaddingMask = padding_mask["audio"][aud_mask]
-            # xAud,_ = self.encoder["audio"](x['audio'][aud_mask], audPaddingMask)
-            xAud,_ = self.encoder["audio"](x['audio'][aud_mask], None)
+            audPaddingMask = padding_mask["audio"][aud_mask] if padding_mask is not None else None
+            xAud, _ = self.encoder["audio"](x['audio'][aud_mask], None)
             size = x["video"].size(1)
             #padd xAud to match size of xVid
             xAud = torch.nn.functional.pad(xAud, (0, 0, 0, size - xAud.size(1)), "constant")
-            combined_aud[aud_mask] = xAud
+            aud_features[aud_mask] = xAud
 
-        # Combine features for modality 2
+        # Fusion for modality 2 (audio and video)
         combined_mask = modality == 2
+        combined_features = torch.zeros_like(vid_features)
         if combined_mask.any():
-            x_combined = torch.cat((combined_vid[combined_mask], combined_aud[combined_mask]), dim=2)
-            x_combined = self.fusion(x_combined)
-            combined_vid[combined_mask] = x_combined
-        combined_vid[modality==1] = combined_aud[modality==1]            
-        return combined_vid
+            vidAndaudioFeatures = torch.cat((vid_features[combined_mask], aud_features[combined_mask]), dim=2)
+            combined_features[combined_mask] = self.fusion(vidAndaudioFeatures)
+
+        # Assign video only and audio only features
+        combined_features[modality == 0] = vid_features[modality == 0]
+        combined_features[modality == 1] = aud_features[modality == 1]
+
+        return combined_features
     def forward_crossmodal(self, x, lengths, label):
         if self.transformer_input_layer == "conv1d":
             lengths = torch.div(lengths, 640, rounding_mode="trunc")
