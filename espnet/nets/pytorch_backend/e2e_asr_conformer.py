@@ -180,7 +180,6 @@ class E2E(torch.nn.Module):
         # Initialize combined features tensor
         combined_vid = torch.zeros(modality.size(0), x['video'].size(1),768, device=modality.device)
         combined_aud = torch.zeros_like(combined_vid, device=modality.device)
-        enc_feat = torch.zeros_like(combined_vid, device=modality.device)
         vid_mask = (modality == 0) | (modality == 2)
         if vid_mask.any():
             vidPaddingMask = None
@@ -207,13 +206,9 @@ class E2E(torch.nn.Module):
         if combined_mask.any():
             x_combined = torch.cat((combined_vid[combined_mask], combined_aud[combined_mask]), dim=2)
             x_combined = self.fusion(x_combined)
-            enc_feat[combined_mask] = x_combined
-            vid_mask[combined_mask] = 0
-            aud_mask[combined_mask] = 0
-        enc_feat[vid_mask] = combined_vid[vid_mask]
-        enc_feat[aud_mask] = combined_aud[aud_mask]
-            
-        return enc_feat
+            combined_vid[combined_mask] = x_combined
+        combined_vid[aud_mask] = combined_aud[aud_mask]            
+        return combined_vid
     def forward_crossmodal(self, x, lengths, label):
         if self.transformer_input_layer == "conv1d":
             lengths = torch.div(lengths, 640, rounding_mode="trunc")
