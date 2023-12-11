@@ -57,8 +57,7 @@ class ModelModule(LightningModule):
 
     def forward(self, sample):
         self.beam_search = get_beam_search_decoder(self.model, self.token_list)
-        if self.cfg.data.modality == "audiovisual":
-            modalities = self.model.getModalitites(sample)
+        if self.cfg.data.modality == "audiovisual": #TODO fix forward
             enc_feat, _ = self.model.getCrossModalFeatures(sample, modalities,None)
         else:
             enc_feat, _ = self.model.encoder(sample.unsqueeze(0).to(self.device), None)
@@ -77,8 +76,7 @@ class ModelModule(LightningModule):
         return self._step(batch, batch_idx, step_type="val")
 
     def test_step(self, sample, sample_idx):
-        if modality == "audiovisual":
-            modalities = self.model.getModalitites(sample)
+        if self.cfg.data.modality == "audiovisual": #TODO fix test step
             enc_feat, _ = self.model.getCrossModalFeatures(sample, modalities,None)
         else:
             enc_feat, _ = self.model.encoder(sample["input"].unsqueeze(0).to(self.device), None)
@@ -98,8 +96,7 @@ class ModelModule(LightningModule):
 
     def _step(self, batch, batch_idx, step_type):
         if self.cfg.data.modality == "audiovisual":
-            loss, loss_ctc, loss_att, acc, audioAcc, vidAcc, bothAcc = self.model(batch["inputs"], batch["input_lengths"], batch["targets"])
-
+            loss, loss_ctc, loss_att, acc, accs = self.model(batch["inputs"], batch["input_lengths"], batch["targets"])
         else:
             loss, loss_ctc, loss_att, acc = self.model(batch["inputs"], batch["input_lengths"], batch["targets"])
         batch_size = len(batch["inputs"])
@@ -110,18 +107,18 @@ class ModelModule(LightningModule):
             self.log("loss_att", loss_att, on_step=False, on_epoch=True, batch_size=batch_size)
             self.log("decoder_acc", acc, on_step=True, on_epoch=True, batch_size=batch_size)
             if self.cfg.data.modality == "audiovisual":
-                self.log("audio_acc", audioAcc, on_step=False, on_epoch=True, batch_size=batch_size)
-                self.log("vid_acc", vidAcc, on_step=False, on_epoch=True, batch_size=batch_size)
-                self.log("both_acc", bothAcc, on_step=False, on_epoch=True, batch_size=batch_size)
+                self.log("audio_acc", accs["audio"], on_step=False, on_epoch=True, batch_size=batch_size)
+                self.log("vid_acc", accs["video"], on_step=False, on_epoch=True, batch_size=batch_size)
+                self.log("both_acc", accs["audiovisual"], on_step=False, on_epoch=True, batch_size=batch_size)
         else:
             self.log("loss_val", loss, batch_size=batch_size)
             self.log("loss_ctc_val", loss_ctc, batch_size=batch_size)
             self.log("loss_att_val", loss_att, batch_size=batch_size)
             self.log("decoder_acc_val", acc, batch_size=batch_size)
             if self.cfg.data.modality == "audiovisual":
-                self.log("audio_acc_val", audioAcc, batch_size=batch_size)
-                self.log("vid_acc_val", vidAcc, batch_size=batch_size)
-                self.log("both_acc_val", bothAcc, batch_size=batch_size)
+                self.log("audio_acc_val", accs["audio"], batch_size=batch_size)
+                self.log("vid_acc_val", accs["video"], batch_size=batch_size)
+                self.log("both_acc_val", accs["audiovisual"], batch_size=batch_size)
 
         if step_type == "train":
             self.log("monitoring_step", torch.tensor(self.global_step, dtype=torch.float32))

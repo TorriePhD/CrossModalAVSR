@@ -166,16 +166,6 @@ class E2E(torch.nn.Module):
         )
 
         return loss, loss_ctc, loss_att, acc
-    def getModalitites(self, x):
-        modality = torch.zeros(x['video'].size(0), dtype=torch.long, device=x["video"].device)
-        # Determine modality by where video and audio are present (all zeros if not present)
-        #check if video is all zeros
-        whereVideo = x['video'].sum(dim=(1,2,3,4)) != 0
-        whereAudio = x['audio'].sum(dim=(1,2)) != 0
-        modality[whereVideo] = 0
-        modality[whereAudio] = 1
-        modality[whereVideo & whereAudio] = 2
-        return modality
     def getAudioFeatures(self, audio, vidSize,padding_mask=None,):
         xAudio,_ = self.audioEcoder(audio, padding_mask)
         size = vidSize
@@ -189,91 +179,48 @@ class E2E(torch.nn.Module):
         x_combined = torch.cat((xVideo, xAudio), dim=2)
         x_combined = self.fusion(x_combined)
         return x_combined
-    def getCrossModalFeaturesSimple(self, x, modality, padding_mask):
-        # Initialize combined features tensor
-        enc_feat = torch.zeros(modality.size(0), x['video'].size(1),768, device=x["video"].device)
-        for i in range(len(modality)):
-            if modality[i] == 0:
-                xVid = self.getVideoFeatures(x['video'][i].unsqueeze(0), padding_mask["video"][i].unsqueeze(0))
-                enc_feat[i] = xVid
-            elif modality[i] == 1:
-                xAud = self.getAudioFeatures(x['audio'][i].unsqueeze(0), x['video'].size(1), None)
-                enc_feat[i] = xAud
-            else:
-                xVid = self.getVideoFeatures(x['video'][i].unsqueeze(0), padding_mask["video"][i].unsqueeze(0))
-                xAud = self.getAudioFeatures(x['audio'][i].unsqueeze(0), x['video'].size(1), None)
-                x_combined = self.getCombinedFeatures(xVid, xAud)
-                enc_feat[i] = x_combined
-        return enc_feat
-    def getCrossModalFeatures(self, x, modality, padding_mask):
-        # Initialize combined features tensor
-        combined_vid = torch.zeros(modality.size(0), x['video'].size(1),768, device=x["video"].device)
-        combined_aud = torch.zeros_like(combined_vid, device=x["video"].device)
-        enc_feat = torch.zeros_like(combined_vid, device=x["video"].device)
-        vid_mask = (modality == 0) | (modality == 2)
-        if vid_mask.any():
-            vidPaddingMask = None
-            if padding_mask is not None:
-                vidPaddingMask = padding_mask["video"][vid_mask]
-            xVid,_ = self.encoder["video"](x['video'][vid_mask], vidPaddingMask)
-            combined_vid[vid_mask] = xVid
-        
-        # Process audio modality if present
-        aud_mask = (modality == 1) | (modality == 2)
-        if aud_mask.any():
-            audPaddingMask = None
-            if padding_mask is not None:
-                audPaddingMask = padding_mask["audio"][aud_mask]
-            # xAud,_ = self.encoder["audio"](x['audio'][aud_mask], audPaddingMask)
-            xAud,_ = self.encoder["audio"](x['audio'][aud_mask], None)
-            size = x["video"].size(1)
-            #padd xAud to match size of xVid
-            xAud = torch.nn.functional.pad(xAud, (0, 0, 0, size - xAud.size(1)), "constant")
-            combined_aud[aud_mask] = xAud
-
-        # Combine features for modality 2
-        combined_mask = modality == 2
-        if combined_mask.any():
-            x_combined = torch.cat((combined_vid[combined_mask], combined_aud[combined_mask]), dim=2)
-            x_combined = self.fusion(x_combined)
-            enc_feat[combined_mask] = x_combined
-        enc_feat[modality==1] = combined_aud[modality==1]      
-        enc_feat[modality==0] = combined_vid[modality==0]      
-        return enc_feat
+    def getSingleModalFeatures(self, video, audio, modality, padding_mask,vidSize=None):
+        if modality == "video":
+            xVid = self.getVideoFeatures(video, padding_mask["video"])
+            return xVid
+        elif modality == "audio":
+            xAud = self.getAudioFeatures(audio, vidSize, None)
+            return xAud
+        else:
+            xVid = self.getVideoFeatures(video, padding_mask["video"])
+            xAud = self.getAudioFeatures(audio, video.size(1), None)
+            x_combined = self.getCombinedFeatures(xVid, xAud)
+            return x_combined
+    
     def forward_crossmodal(self, x, lengths, label):
         if self.transformer_input_layer == "conv1d":
             lengths = torch.div(lengths, 640, rounding_mode="trunc")
-        padding_mask = {key: make_non_pad_mask(lengths[key]).to(x['video'].device).unsqueeze(-2) for key in lengths.keys()}
+        padding_mask = {key: make_non_pad_mask(lengths[key]).to(x["video"].device).unsqueeze(-2) for key in lengths.keys()}
+        loss, loss_ctc, loss_att, acc = {}, {}, {}, {}
+        vidSize = x["video"].size(1)
+        for modality in ["audio", "video","audiovisual"]:
+            video = x["video"] if modality != "audio" else None
+            audio = x["audio"] if modality != "video" else None
+            enc_feat = self.getSingleModalFeatures(video, audio, modality, padding_mask, vidSize)
+            # ctc loss
+            loss_ctcMod, ys_hat = self.ctc(enc_feat, lengths["video"], label)
+            loss_ctc[modality] = loss_ctcMod
+            
+            # decoder loss
+            ys_in_pad, ys_out_pad = add_sos_eos(label, self.sos, self.eos, self.ignore_id)
+            ys_mask = target_mask(ys_in_pad, self.ignore_id)
+            if self.mtlalpha < 1:
+                pred_pad, _ = self.decoder(ys_in_pad, ys_mask, enc_feat, padding_mask["video"])
+            else:
+                pred_pad = None
+            loss_att[modality] = self.criterion(pred_pad, ys_out_pad)
+            loss[modality] = self.mtlalpha * loss_ctc[modality] + (1 - self.mtlalpha) * loss_att[modality]
 
-        modality = self.getModalitites(x)
-        enc_feat = self.getCrossModalFeaturesSimple(x, modality, padding_mask)
-        # ctc loss
-        loss_ctc, ys_hat = self.ctc(enc_feat, lengths["video"], label)
-
-        
-        # decoder loss
-        ys_in_pad, ys_out_pad = add_sos_eos(label, self.sos, self.eos, self.ignore_id)
-        ys_mask = target_mask(ys_in_pad, self.ignore_id)
-        if self.mtlalpha < 1:
-            pred_pad, _ = self.decoder(ys_in_pad, ys_mask, enc_feat, padding_mask["video"])
-        else:
-            pred_pad = None
-        loss_att = self.criterion(pred_pad, ys_out_pad)
-        loss = self.mtlalpha * loss_ctc + (1 - self.mtlalpha) * loss_att
-
-        acc = th_accuracy(
-            pred_pad.view(-1, self.odim), ys_out_pad, ignore_label=self.ignore_id
-        )
-        audioIndexes = modality == 1
-        videoIndexes = modality == 0
-        audiovisualIndexes = modality == 2
-        audioOnlyAcc = th_accuracy(
-            pred_pad[audioIndexes].view(-1, self.odim), ys_out_pad[audioIndexes], ignore_label=self.ignore_id
-        )
-        videoOnlyAcc = th_accuracy(
-            pred_pad[videoIndexes].view(-1, self.odim), ys_out_pad[videoIndexes], ignore_label=self.ignore_id
-        )
-        audiovisualAcc = th_accuracy(
-            pred_pad[audiovisualIndexes].view(-1, self.odim), ys_out_pad[audiovisualIndexes], ignore_label=self.ignore_id
-        )
-        return loss, loss_ctc, loss_att, acc,audioOnlyAcc,videoOnlyAcc,audiovisualAcc
+            accMod = th_accuracy(
+                pred_pad.view(-1, self.odim), ys_out_pad, ignore_label=self.ignore_id
+            )
+            acc[modality] = accMod
+        loss = sum(loss.values())
+        loss_ctc = sum(loss_ctc.values())
+        loss_att = sum(loss_att.values())
+        return loss, loss_ctc, loss_att, acc["video"], acc
