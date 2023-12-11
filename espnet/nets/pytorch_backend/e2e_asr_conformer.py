@@ -205,8 +205,8 @@ class E2E(torch.nn.Module):
             combined_features[combined_mask] = self.fusion(vidAndaudioFeatures)
 
         # Assign video only and audio only features
-        combined_features[modality == 0] = vid_features[modality == 0]
-        combined_features[modality == 1] = aud_features[modality == 1]
+        # combined_features[modality == 0] = vid_features[modality == 0]
+        # combined_features[modality == 1] = aud_features[modality == 1]
 
         return combined_features
     def forward_crossmodal(self, x, lengths, label):

@@ -113,7 +113,7 @@ class DataModule(LightningDataModule):
         )
         sampler = ByFrameCountSampler(train_ds, self.cfg.data.max_frames,modality = self.modality)
         if self.total_gpus > 1:
-            sampler = DistributedSamplerWrapper(sampler)
+            sampler = DistributedSamplerWrapper(sampler, shuffle=False)
         else:
             sampler = RandomSamplerWrapper(sampler)
         return self._dataloader(train_ds, sampler, collate_pad)
