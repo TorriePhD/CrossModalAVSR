@@ -26,15 +26,34 @@ def average_checkpoints(last):
 
 
 def ensemble(args):
-    last = [
-        os.path.join(args.exp_dir, args.exp_name, f"epoch={n}.ckpt")
-        for n in range(
-            args.trainer.max_epochs - 10,
-            args.trainer.max_epochs,
-        )
-    ]
+    try:
+
+        last = [
+            os.path.join(args.exp_dir, args.exp_name, f"epoch={n}.ckpt")
+                for n in range(
+                    args.trainer.max_epochs - 10,
+                    args.trainer.max_epochs,
+                )
+        ]
+    except:
+        last = [
+            os.path.join(args.exp_dir, args.exp_name, f"epoch={n}.ckpt")
+                for n in range(
+                    args.max_epochs - 10,
+                    args.max_epochs,
+                )
+        ]
     model_path = os.path.join(
         args.exp_dir, args.exp_name, f"model_avg_10.pth"
     )
     torch.save(average_checkpoints(last), model_path)
     return model_path
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--exp_dir", type=str, default="exps")
+    parser.add_argument("--exp_name", type=str, default="exp")
+    parser.add_argument("--max_epochs", type=int, default=100)
+    args = parser.parse_args()
+    ensemble(args)
