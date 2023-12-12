@@ -205,42 +205,48 @@ class E2E(torch.nn.Module):
         if self.transformer_input_layer == "conv1d":
             lengths = torch.div(lengths, 640, rounding_mode="trunc")
         padding_mask = {key: make_non_pad_mask(lengths[key]).to(x["video"].device).unsqueeze(-2) for key in lengths.keys()}
-        loss, loss_ctc, loss_att, acc = {}, {}, {}, {}
         vidSize = x["video"].size(1)
         modalities = self.getModalities(x)
+        enc_feat = torch.zeros(x['video'].size(0), vidSize, self.adim, device=x["video"].device)
         for modality in ["audio", "video","audiovisual"]:
             if modality == "audiovisual":
                 indexes = modalities == 2
-                video = x["video"][indexes].clone()
-                audio = x["audio"][indexes].clone()
+                video = x["video"][indexes]
+                audio = x["audio"][indexes]
             elif modality == "audio":
                 indexes = modalities == 1
                 video = None
-                audio = x["audio"][indexes].clone()
+                audio = x["audio"][indexes]
             else:
                 indexes = modalities == 0
-                video = x["video"][indexes].clone()
+                video = x["video"][indexes]
                 audio = None
-            enc_feat = self.getSingleModalFeatures(video, audio, modality, padding_mask, vidSize,indexes)
-            # ctc loss
-            loss_ctcMod, ys_hat = self.ctc(enc_feat, lengths["video"][indexes], label[indexes])
-            loss_ctc[modality] = loss_ctcMod
-            
-            # decoder loss
-            ys_in_pad, ys_out_pad = add_sos_eos(label[indexes], self.sos, self.eos, self.ignore_id)
-            ys_mask = target_mask(ys_in_pad, self.ignore_id)
-            if self.mtlalpha < 1:
-                pred_pad, _ = self.decoder(ys_in_pad, ys_mask, enc_feat, padding_mask["video"][indexes])
-            else:
-                pred_pad = None
-            loss_att[modality] = self.criterion(pred_pad, ys_out_pad)
-            loss[modality] = self.mtlalpha * loss_ctc[modality] + (1 - self.mtlalpha) * loss_att[modality]
+            enc_feat[indexes] = self.getSingleModalFeatures(video, audio, modality, padding_mask, vidSize,indexes)
+        # ctc loss
+        loss_ctcMod, ys_hat = self.ctc(enc_feat, lengths["video"], label)
+        loss_ctc = loss_ctcMod
+        
+        # decoder loss
+        ys_in_pad, ys_out_pad = add_sos_eos(label, self.sos, self.eos, self.ignore_id)
+        ys_mask = target_mask(ys_in_pad, self.ignore_id)
+        if self.mtlalpha < 1:
+            pred_pad, _ = self.decoder(ys_in_pad, ys_mask, enc_feat, padding_mask["video"])
+        else:
+            pred_pad = None
+        loss_att = self.criterion(pred_pad, ys_out_pad)
+        loss = self.mtlalpha * loss_ctc + (1 - self.mtlalpha) * loss_att
 
-            accMod = th_accuracy(
-                pred_pad.view(-1, self.odim), ys_out_pad, ignore_label=self.ignore_id
-            )
-            acc[modality] = accMod
-        loss = sum(loss.values())
-        loss_ctc = sum(loss_ctc.values())
-        loss_att = sum(loss_att.values())
-        return loss, loss_ctc, loss_att, acc["video"], acc
+        accAll = th_accuracy(
+            pred_pad.view(-1, self.odim), ys_out_pad, ignore_label=self.ignore_id
+        )
+        acc = {}
+        acc["video"] = th_accuracy(
+            pred_pad.view(-1, self.odim)[modalities==0], ys_out_pad[modalities==0], ignore_label=self.ignore_id
+        )
+        acc["audio"] = th_accuracy(
+            pred_pad.view(-1, self.odim)[modalities==1], ys_out_pad[modalities==1], ignore_label=self.ignore_id
+        )
+        acc["audiovisual"] = th_accuracy(
+            pred_pad.view(-1, self.odim)[modalities==2], ys_out_pad[modalities==2], ignore_label=self.ignore_id
+        )
+        return loss, loss_ctc, loss_att, accAll, acc
