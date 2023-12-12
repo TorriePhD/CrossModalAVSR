@@ -211,15 +211,15 @@ class E2E(torch.nn.Module):
         for modality in ["audio", "video","audiovisual"]:
             if modality == "audiovisual":
                 indexes = modalities == 2
-                video = x["video"][indexes].clone()
-                audio = x["audio"][indexes].clone()
+                video = x["video"][indexes]
+                audio = x["audio"][indexes]
             elif modality == "audio":
                 indexes = modalities == 1
                 video = None
-                audio = x["audio"][indexes].clone()
+                audio = x["audio"][indexes]
             else:
                 indexes = modalities == 0
-                video = x["video"][indexes].clone()
+                video = x["video"][indexes]
                 audio = None
             enc_feat = self.getSingleModalFeatures(video, audio, modality, padding_mask, vidSize,indexes)
             # ctc loss
