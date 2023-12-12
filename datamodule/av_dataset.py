@@ -59,20 +59,22 @@ class AVDataset(torch.utils.data.Dataset):
 
     def load_list(self, label_path):
         paths_counts_labels = []
+        modalities = ["audio", "video", "audiovisual"]
+        #do random modality
         for path_count_label in open(label_path).read().splitlines():
             dataset_name, rel_path, input_length, token_id = path_count_label.split(",")
             if self.modality == "audiovisual":
-                modalities = ["audio", "video", "audiovisual"]
-                for modality in modalities:
-                    paths_counts_labels.append(
-                        (
-                            dataset_name,
-                            rel_path,
-                            int(input_length),
-                            torch.tensor([int(_) for _ in token_id.split()]),
-                            modality
-                        )
+                # modalities = ["audio", "video", "audiovisual"]
+                # for modality in modalities:
+                paths_counts_labels.append(
+                    (
+                        dataset_name,
+                        rel_path,
+                        int(input_length),
+                        torch.tensor([int(_) for _ in token_id.split()]),
+                        modalities[torch.randint(0, 3, (1,)).item()],
                     )
+                )
             else:
                 paths_counts_labels.append(
                     (
