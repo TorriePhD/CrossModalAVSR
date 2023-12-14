@@ -6,10 +6,10 @@ import torchaudio
 import torchvision
 from lightning import ModelModule
 from datamodule.transforms import AudioTransform, VideoTransform
-
+from pathlib import Path
 
 class InferencePipeline(torch.nn.Module):
-    def __init__(self, cfg, detector="retinaface"):
+    def __init__(self, cfg, detector="mediapipe"):
         super(InferencePipeline, self).__init__()
         self.modality = cfg.data.modality
         if self.modality in ["audio", "audiovisual"]:
@@ -76,7 +76,7 @@ class InferencePipeline(torch.nn.Module):
 def main(cfg):
     pipeline = InferencePipeline(cfg)
     transcript = pipeline(cfg.file_path)
-    print(f"transcript: {transcript}")
+    return transcript
 
 
 if __name__ == "__main__":
