@@ -24,22 +24,24 @@ def pad(samples, pad_val=0.0):
         else:
             lengths.append(0)
     max_size = max(lengths)
+    device = None
     sample_shape = None
     for sample in samples:
         if sample is not None:
+            device = sample.device
             sample_shape = list(sample.shape[1:])
             lenSampleShape = len(sample.shape)
             collated_batch = sample.new_zeros([len(samples), max_size] + sample_shape)
             break
     if sample_shape is None:
         #no samples in batch
-        collated_batch = torch.zeros([len(samples), 1,max_size])
+        collated_batch = torch.zeros([len(samples), 1, 80], dtype=torch.float32, device=device)
         return collated_batch, lengths
     for i, sample in enumerate(samples):
         if sample is None:
             diff = max_size
             #set it to zeros
-            collated_batch[i] = torch.zeros([max_size] + sample_shape)
+            collated_batch[i] = torch.zeros([max_size] + sample_shape, dtype=torch.float32, device=device)
         else:
             diff = len(sample) - max_size
             if diff == 0:

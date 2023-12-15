@@ -23,7 +23,7 @@ class ByFrameCountSampler(Sampler):
 
         
         self.modality = modality
-        if self.modality == "audiovisual":
+        if self.modality == "audiovisual" and False:
             self.audio_only_indices = []
             self.video_only_indices = []
             self.audiovisual_indices = []
@@ -78,12 +78,12 @@ class ByFrameCountSampler(Sampler):
         return np.lexsort(order)[::-1]
 
     def __len__(self):
-        if self.modality == "audiovisual":
-            return self.batchCount
+        # if self.modality == "audiovisual":
+        #     return self.batchCount
         return self.num_batches
 
     def __iter__(self):
-        if self.modality == "audiovisual":
+        if self.modality == "audiovisual" and False:
             return iter(self.batches)
         else:
             batch_indices = data_utils.batch_by_size(
