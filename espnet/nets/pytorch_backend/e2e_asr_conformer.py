@@ -198,17 +198,23 @@ class E2E(torch.nn.Module):
         modality[whereAudio] = 1
         modality[whereVideo & whereAudio] = 2
         return modality
-    def forward_crossmodal(self, x, lengths, label):
-        padding_mask = {}
-        for key in lengths.keys():
-            myLengths = lengths[key]
-            if key == "audio":
-                myLengths = torch.div(lengths[key], 640, rounding_mode="trunc")
-            padding_mask[key] = make_non_pad_mask(myLengths).to(x[key].device).unsqueeze(-2)
+    def getAllModalFeatures(self,x,lengths=None,label=None):
+        if lengths is not None:
+            padding_mask = {}
+            for key in lengths.keys():
+                myLengths = lengths[key]
+                if key == "audio":
+                    myLengths = torch.div(lengths[key], 640, rounding_mode="trunc")
+                padding_mask[key] = make_non_pad_mask(myLengths).to(x[key].device).unsqueeze(-2)
+        else:
+            padding_mask = None
         vidSize = x["video"].size(1)
         # modalities = self.getModalities(x)
         enc_feat = torch.zeros(x['video'].size(0)*3, x['video'].size(1), self.adim, device=x["video"].device)
-        modalities = torch.cat((torch.zeros_like(lengths["audio"]), torch.ones_like(lengths["video"]), torch.ones_like(lengths["audio"])*2), dim=0)
+        modalities = torch.cat((torch.zeros(x['video'].size(0), dtype=torch.long, device=x["video"].device),
+                                torch.ones(x['video'].size(0), dtype=torch.long, device=x["video"].device),
+                                torch.ones(x['video'].size(0), dtype=torch.long, device=x["video"].device)*2))
+
         for modality in ["audio", "video","audiovisual"]:
             if modality == "audiovisual":
                 indexes = modalities == 2
@@ -225,11 +231,17 @@ class E2E(torch.nn.Module):
             enc_feat[indexes] = self.getSingleModalFeatures(video, audio, modality, padding_mask, vidSize, )
         # ctc loss
         #repeat label 3 times
-        label = torch.cat((label, label, label), dim=0)
-        lengths["video"] = torch.cat((lengths["video"], lengths["video"], lengths["video"]), dim=0)
-        lengths["audio"] = torch.cat((lengths["audio"], lengths["audio"], lengths["audio"]), dim=0)
-        padding_mask["video"] = torch.cat((padding_mask["video"], padding_mask["video"], padding_mask["video"]), dim=0)
-        padding_mask["audio"] = torch.cat((padding_mask["audio"], padding_mask["audio"], padding_mask["audio"]), dim=0)
+        if label is not None:
+            label = torch.cat((label, label, label), dim=0)
+        if lengths is not None:
+            lengths["video"] = torch.cat((lengths["video"], lengths["video"], lengths["video"]), dim=0)
+            lengths["audio"] = torch.cat((lengths["audio"], lengths["audio"], lengths["audio"]), dim=0)
+            padding_mask["video"] = torch.cat((padding_mask["video"], padding_mask["video"], padding_mask["video"]), dim=0)
+            padding_mask["audio"] = torch.cat((padding_mask["audio"], padding_mask["audio"], padding_mask["audio"]), dim=0)
+
+        return enc_feat, lengths, padding_mask, label, modalities
+    def forward_crossmodal(self, x, lengths, label):
+        enc_feat, lengths, padding_mask, label, modalities = self.getAllModalFeatures(x,lengths,label)
         loss_ctcMod, ys_hat = self.ctc(enc_feat, lengths["video"], label)
         loss_ctc = loss_ctcMod
         

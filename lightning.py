@@ -57,8 +57,9 @@ class ModelModule(LightningModule):
 
     def forward(self, sample):
         self.beam_search = get_beam_search_decoder(self.model, self.token_list)
-        if self.cfg.data.modality == "audiovisual": #TODO fix forward
-            enc_feat, _ = self.model.getCrossModalFeatures(sample, modalities,None)
+        modalities = None
+        if self.cfg.data.modality == "audiovisual": 
+            enc_feat, _, _, _, modalities = self.model.getAllModalFeatures(sample) #TODO fix this to do only video I beleive this is just for the demo code. maybe eval but probably not.
         else:
             enc_feat, _ = self.model.encoder(sample.unsqueeze(0).to(self.device), None)
         enc_feat = enc_feat.squeeze(0)
@@ -76,23 +77,37 @@ class ModelModule(LightningModule):
         return self._step(batch, batch_idx, step_type="val")
 
     def test_step(self, sample, sample_idx):
-        if self.cfg.data.modality == "audiovisual": #TODO fix test step
-            enc_feat, _ = self.model.getCrossModalFeatures(sample, modalities,None)
+        if self.cfg.data.modality == "audiovisual": 
+            enc_feat, _, _, _, modalities = self.model.getAllModalFeatures(sample)
+            modalityOptions = ["audio", "video", "audiovisual"]
+            self.beam_search = get_beam_search_decoder(self.model, self.token_list)
+            token_id = sample["target"]
+            actual = self.text_transform.post_process(token_id)
+            for i in range(modalityOptions):
+                myEncFeat = enc_feat[modalities==i]
+                myEncFeat.squeeze(0)
+                nbest_hyps = self.beam_search(myEncFeat)
+                nbest_hyps = [h.asdict() for h in nbest_hyps[: min(len(nbest_hyps), 1)]]
+                predicted_token_id = torch.tensor(list(map(int, nbest_hyps[0]["yseq"][1:])))
+                predicted = self.text_transform.post_process(predicted_token_id).replace("<eos>", "")
+                self.total_edit_distance[modalityOptions[i]] += compute_word_level_distance(actual, predicted)
+                self.total_length[modalityOptions[i]] += len(actual.split())
+                return
         else:
             enc_feat, _ = self.model.encoder(sample["input"].unsqueeze(0).to(self.device), None)
-        enc_feat = enc_feat.squeeze(0)
+            enc_feat = enc_feat.squeeze(0)
 
-        nbest_hyps = self.beam_search(enc_feat)
-        nbest_hyps = [h.asdict() for h in nbest_hyps[: min(len(nbest_hyps), 1)]]
-        predicted_token_id = torch.tensor(list(map(int, nbest_hyps[0]["yseq"][1:])))
-        predicted = self.text_transform.post_process(predicted_token_id).replace("<eos>", "")
+            nbest_hyps = self.beam_search(enc_feat)
+            nbest_hyps = [h.asdict() for h in nbest_hyps[: min(len(nbest_hyps), 1)]]
+            predicted_token_id = torch.tensor(list(map(int, nbest_hyps[0]["yseq"][1:])))
+            predicted = self.text_transform.post_process(predicted_token_id).replace("<eos>", "")
 
-        token_id = sample["target"]
-        actual = self.text_transform.post_process(token_id)
+            token_id = sample["target"]
+            actual = self.text_transform.post_process(token_id)
 
-        self.total_edit_distance += compute_word_level_distance(actual, predicted)
-        self.total_length += len(actual.split())
-        return
+            self.total_edit_distance += compute_word_level_distance(actual, predicted)
+            self.total_length += len(actual.split())
+            return
 
     def _step(self, batch, batch_idx, step_type):
         if self.cfg.data.modality == "audiovisual":
@@ -132,13 +147,22 @@ class ModelModule(LightningModule):
         return super().on_train_epoch_start()
 
     def on_test_epoch_start(self):
-        self.total_length = 0
-        self.total_edit_distance = 0
+        if self.cfg.data.modality == "audiovisual":
+            self.total_edit_distance = {"audio": 0, "video": 0, "audiovisual": 0}
+            self.total_length = {"audio": 0, "video": 0, "audiovisual": 0}
+        else:
+            self.total_edit_distance = 0
+            self.total_length = 0
+
         self.text_transform = TextTransform()
         self.beam_search = get_beam_search_decoder(self.model, self.token_list)
 
     def on_test_epoch_end(self):
-        self.log("wer", self.total_edit_distance / self.total_length)
+        if self.cfg.data.modality == "audiovisual":
+            for modality in self.total_edit_distance.keys():
+                self.log("wer_" + modality, self.total_edit_distance[modality] / self.total_length[modality])
+        else:
+            self.log("wer", self.total_edit_distance / self.total_length)
 
 
 def get_beam_search_decoder(model, token_list, ctc_weight=0.1, beam_size=40):
