@@ -49,7 +49,18 @@ class ModelModule(LightningModule):
                 self.model.load_state_dict(state_dict, strict=True)
                 print("success")
             else:
-                self.model.load_state_dict(ckpt)
+                if self.cfg.data.modality == "video":
+                    new_state_dict = {}
+                    for k, v in ckpt.items():
+                        if "audioEcoder" in k or "audioEncoder" in k or "fusion" in k:
+                            continue
+                        
+                        if "videoEncoder" in k:
+                            k = k.replace("videoEncoder", "encoder")
+                        new_state_dict[k] = v
+                    self.model.load_state_dict(new_state_dict, strict=True)
+                else:
+                    self.model.load_state_dict(ckpt)
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW([{"name": "model", "params": self.model.parameters(), "lr": self.cfg.optimizer.lr}], weight_decay=self.cfg.optimizer.weight_decay, betas=(0.9, 0.98))
