@@ -83,7 +83,7 @@ class ModelModule(LightningModule):
             sample["input"]["audio"] = sample["input"]["audio"].unsqueeze(0)
             sample["input"]["video"] = sample["input"]["video"].unsqueeze(0)
             enc_feat, _, _, _, modalities = self.model.getAllModalFeatures(sample["input"])
-            modalityOptions = ["audio", "video", "audiovisual"]
+            modalityOptions = ["video","audio", "audiovisual"]
             self.beam_search = get_beam_search_decoder(self.model, self.token_list)
             token_id = sample["target"]
             actual = self.text_transform.post_process(token_id)
