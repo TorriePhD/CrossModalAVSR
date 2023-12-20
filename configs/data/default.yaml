@@ -5,3 +5,4 @@ modality: video
 use_audio_normalise: False
 max_frames: 1800
 max_frames_val: 500
+num_workers: 12
