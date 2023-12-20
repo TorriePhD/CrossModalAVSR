@@ -16,8 +16,9 @@ def main(cfg):
     datamodule = DataModule(cfg)
     trainer = Trainer(num_nodes=1, gpus=1)
     # Training and testing
-    state_dict = torch.load(cfg.pretrained_model_path, map_location=lambda storage, loc: storage)["state_dict"]
-    state_dict = {k.replace("model.", ""): v for k, v in state_dict.items()}
+    # state_dict = torch.load(cfg.pretrained_model_path, map_location=lambda storage, loc: storage)["state_dict"]
+    # state_dict = {k.replace("model.", ""): v for k, v in state_dict.items()}
+    state_dict = torch.load(cfg.pretrained_model_path, map_location=lambda storage, loc: storage)
     modelmodule.model.load_state_dict(state_dict)
     #save the results of the model in a file
     trainer.test(model=modelmodule, datamodule=datamodule)

@@ -42,12 +42,14 @@ class ModelModule(LightningModule):
             elif self.cfg.transfer_encoder:
                 tmp_ckpt = {k.replace("encoder.", ""): v for k, v in ckpt.items() if k.startswith("encoder.")}
                 self.model.encoder.load_state_dict(tmp_ckpt, strict=True)
-            else:
+            elif "state_dict" in ckpt:
                 state_dict = ckpt["state_dict"]
                 #remove the prefixe "model."
                 state_dict = {k.replace("model.", ""): v for k, v in state_dict.items()}
                 self.model.load_state_dict(state_dict, strict=True)
                 print("success")
+            else:
+                self.model.load_state_dict(ckpt)
 
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW([{"name": "model", "params": self.model.parameters(), "lr": self.cfg.optimizer.lr}], weight_decay=self.cfg.optimizer.weight_decay, betas=(0.9, 0.98))
@@ -78,21 +80,23 @@ class ModelModule(LightningModule):
 
     def test_step(self, sample, sample_idx):
         if self.cfg.data.modality == "audiovisual": 
-            enc_feat, _, _, _, modalities = self.model.getAllModalFeatures(sample)
+            sample["input"]["audio"] = sample["input"]["audio"].unsqueeze(0)
+            sample["input"]["video"] = sample["input"]["video"].unsqueeze(0)
+            enc_feat, _, _, _, modalities = self.model.getAllModalFeatures(sample["input"])
             modalityOptions = ["audio", "video", "audiovisual"]
             self.beam_search = get_beam_search_decoder(self.model, self.token_list)
             token_id = sample["target"]
             actual = self.text_transform.post_process(token_id)
-            for i in range(modalityOptions):
+            for i in range(len(modalityOptions)):
                 myEncFeat = enc_feat[modalities==i]
                 myEncFeat.squeeze(0)
-                nbest_hyps = self.beam_search(myEncFeat)
+                nbest_hyps = self.beam_search(myEncFeat[0])
                 nbest_hyps = [h.asdict() for h in nbest_hyps[: min(len(nbest_hyps), 1)]]
                 predicted_token_id = torch.tensor(list(map(int, nbest_hyps[0]["yseq"][1:])))
                 predicted = self.text_transform.post_process(predicted_token_id).replace("<eos>", "")
                 self.total_edit_distance[modalityOptions[i]] += compute_word_level_distance(actual, predicted)
                 self.total_length[modalityOptions[i]] += len(actual.split())
-                return
+            return
         else:
             enc_feat, _ = self.model.encoder(sample["input"].unsqueeze(0).to(self.device), None)
             enc_feat = enc_feat.squeeze(0)

@@ -164,6 +164,8 @@ class E2E(torch.nn.Module):
 
         return loss, loss_ctc, loss_att, acc
     def getAudioFeatures(self, audio, vidSize,padding_mask=None,):
+        if len(audio.size()) == 2:
+            audio = audio.unsqueeze(0)
         xAudio,_ = self.audioEcoder(audio, padding_mask)
         size = vidSize
         #padd xAud to match size of xVid
@@ -178,12 +180,23 @@ class E2E(torch.nn.Module):
         return x_combined
     def getSingleModalFeatures(self, video, audio, modality, padding_mask,vidSize=None,):
         if modality == "video":
-            xVid = self.getVideoFeatures(video, padding_mask["video"])
+            myPaddingMask = None
+            if padding_mask is not None:
+                myPaddingMask = padding_mask["video"]
+            xVid = self.getVideoFeatures(video, myPaddingMask)
             return xVid
         elif modality == "audio":
-            xAud = self.getAudioFeatures(audio, vidSize, padding_mask["audio"])
+            myPaddingMask = None
+            if padding_mask is not None:
+                myPaddingMask = padding_mask["audio"]
+
+            xAud = self.getAudioFeatures(audio, vidSize, myPaddingMask)
             return xAud
         else:
+            if padding_mask is None:
+                padding_mask = {}
+                padding_mask["video"] = None
+                padding_mask["audio"] = None
             xVid = self.getVideoFeatures(video, padding_mask["video"])
             xAud = self.getAudioFeatures(audio, video.size(1), padding_mask["audio"])
             x_combined = self.getCombinedFeatures(xVid, xAud)
