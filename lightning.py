@@ -48,6 +48,15 @@ class ModelModule(LightningModule):
                 state_dict = {k.replace("model.", ""): v for k, v in state_dict.items()}
                 self.model.load_state_dict(state_dict, strict=True)
                 print("success")
+            if "avsr" in self.cfg.pretrained_model_path:
+                #in ckpt:
+                #change aux_encoder to audioEncoder
+                #change encoder to videoEncoder
+                state_dict = ckpt["state_dict"]
+                state_dict = {k.replace("aux_encoder", "audioEncoder"): v for k, v in state_dict.items()}
+                state_dict = {k.replace("encoder", "videoEncoder"): v for k, v in state_dict.items()}
+                self.model.load_state_dict(state_dict, strict=True)
+
             else:
                 if self.cfg.data.modality == "video":
                     new_state_dict = {}

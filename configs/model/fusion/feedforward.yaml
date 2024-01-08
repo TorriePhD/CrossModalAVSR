@@ -1,4 +1,2 @@
-adim: 1536
-odim: 768
-hidden_units: 2048
-dropout_rate: 0.1
+fusion_hdim: 8192
+fusion_norm: batchnorm

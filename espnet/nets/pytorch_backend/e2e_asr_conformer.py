@@ -18,6 +18,7 @@ from espnet.nets.pytorch_backend.transformer.encoder import Encoder
 from espnet.nets.pytorch_backend.transformer.positionwise_feed_forward import PositionwiseFeedForward
 from espnet.nets.pytorch_backend.transformer.label_smoothing_loss import LabelSmoothingLoss
 from espnet.nets.pytorch_backend.transformer.mask import target_mask
+from espnet.nets.pytorch_backend.nets_utils import MLPHead
 
 
 class E2E(torch.nn.Module):
@@ -59,7 +60,12 @@ class E2E(torch.nn.Module):
                     self_attention_dropout_rate=args["visual_backbone"].transformer_attn_dropout_rate,
                     src_attention_dropout_rate=args["visual_backbone"].transformer_attn_dropout_rate,
                 )
-            self.fusion = torch.nn.Linear(args["audio_backbone"].adim + args["visual_backbone"].adim, args["visual_backbone"].adim)
+            self.fusion = MLPHead(
+            idim=args.adim + args.adim,
+            hdim=args.fusion_hdim,
+            odim=args.adim,
+            norm=args.fusion_norm,
+        )
             self.criterion = LabelSmoothingLoss(
                 self.odim,
                 self.ignore_id,
