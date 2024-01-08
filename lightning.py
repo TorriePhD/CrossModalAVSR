@@ -58,7 +58,21 @@ class ModelModule(LightningModule):
                         if "videoEncoder" in k:
                             k = k.replace("videoEncoder", "encoder")
                         new_state_dict[k] = v
-                    self.model.load_state_dict(new_state_dict, strict=True)
+                    self.model.load_state_dict(new_state_dict, strict=True)                    
+                elif self.cfg.data.modality == "audiovisual":
+                    #check if audioEncoder is in the ckpt
+                    if "audioEncoder" in ckpt:
+                        self.model.load_state_dict(ckpt, strict=True)
+                    else:
+                        #load video encoder
+                        tmp_ckpt = {k.replace("encoder", "videoEncoder"): v for k, v in ckpt.items() if k.startswith("encoder")}
+                        self.model.videoEncoder.load_state_dict(ckpt, strict=True)
+                        #load front end
+                        tmp_ckpt = {k: v for k, v in ckpt.items() if k.startswith("trunk.") or k.startswith("frontend3D.")}
+                        self.model.encoder.frontend.load_state_dict(tmp_ckpt)
+                        #load decoder
+                        tmp_ckpt = {k: v for k, v in ckpt.items() if k.startswith("decoder")}
+                        self.model.decoder.load_state_dict(tmp_ckpt)
                 else:
                     self.model.load_state_dict(ckpt)
 
