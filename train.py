@@ -27,10 +27,10 @@ def main(cfg):
     callbacks = [checkpoint, lr_monitor]
 
     # Set modules and trainer
-    if cfg.data.modality in ["audio", "visual"]:
-        from lightning import ModelModule
-    elif cfg.data.modality == "audiovisual":
-        from lightning_av import ModelModule
+    # if cfg.data.modality in ["audio", "visual"]:
+    from lightning import ModelModule
+    # elif cfg.data.modality == "audiovisual":
+    #     from lightning_av import ModelModule
     modelmodule = ModelModule(cfg)
     datamodule = DataModule(cfg)
     trainer = Trainer(
