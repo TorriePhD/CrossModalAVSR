@@ -52,10 +52,14 @@ class ModelModule(LightningModule):
                 #in ckpt:
                 #change aux_encoder to audioEncoder
                 #change encoder to videoEncoder
-                state_dict = ckpt["state_dict"]
-                state_dict = {k.replace("aux_encoder", "audioEncoder"): v for k, v in state_dict.items()}
-                state_dict = {k.replace("encoder", "videoEncoder"): v for k, v in state_dict.items()}
-                self.model.load_state_dict(state_dict, strict=True)
+            
+                state_dict = {k.replace("aux_encoder", "audioEncoder"): v for k, v in ckpt.items()}
+                if self.cfg.data.modality == "video":
+                    #remove audioEncoder and fusion
+                    state_dict = {k: v for k, v in state_dict.items() if not k.startswith("audioEncoder") or not k.startswith("fusion")}
+                else:
+                    state_dict = {k.replace("encoder.", "videoEncoder."): v for k, v in state_dict.items()}
+                    self.model.load_state_dict(state_dict, strict=True)
 
             else:
                 if self.cfg.data.modality == "video":
