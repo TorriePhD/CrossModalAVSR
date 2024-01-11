@@ -6,8 +6,10 @@ import torch
 from pytorch_lightning import seed_everything, Trainer
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 from pytorch_lightning.plugins import DDPPlugin
+from pytorch_lightning.loggers import TensorBoardLogger
 from avg_ckpts import ensemble
 from datamodule.data_module import DataModule
+
 
 
 @hydra.main(version_base="1.3", config_path="configs", config_name="config")
@@ -33,9 +35,12 @@ def main(cfg):
     #     from lightning_av import ModelModule
     modelmodule = ModelModule(cfg)
     datamodule = DataModule(cfg)
+    #get name of exp_dir
+    exp_dir_name = os.path.basename(os.path.normpath(cfg.exp_dir))
+    logger = TensorBoardLogger(save_dir="/home/st392/fsl_groups/grp_lip/compute/results/lightning_logs", name=exp_dir_name, log_graph=True,version=cfg.exp_name)
     trainer = Trainer(
         **cfg.trainer,
-        #logger=WandbLogger(name=cfg.exp_name, project="auto_avsr"),
+        logger=logger,
         callbacks=callbacks,
         strategy=DDPPlugin(find_unused_parameters=False)
     )
