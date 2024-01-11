@@ -73,8 +73,8 @@ class ModelModule(LightningModule):
                         new_state_dict[k] = v
                     self.model.load_state_dict(new_state_dict, strict=True)                    
                 elif self.cfg.data.modality == "audiovisual":
-                    #check if audioEncoder is in the ckpt
-                    if "audioEncoder" in ckpt:
+                    #check if any start with audioEncoder. is in the ckpt
+                    if len([k for k, v in ckpt.items() if k.startswith("audioEncoder.")]) > 0:
                         self.model.load_state_dict(ckpt, strict=True)
                     else:
                         #load video encoder
@@ -121,7 +121,7 @@ class ModelModule(LightningModule):
             sample["input"]["audio"] = sample["input"]["audio"].unsqueeze(0)
             sample["input"]["video"] = sample["input"]["video"].unsqueeze(0)
             enc_feat, _, _, _, modalities = self.model.getAllModalFeatures(sample["input"])
-            modalityOptions = ["video","audio", "audiovisual"]
+            modalityOptions = ["video","audio"]
             self.beam_search = get_beam_search_decoder(self.model, self.token_list)
             token_id = sample["target"]
             actual = self.text_transform.post_process(token_id)
@@ -166,7 +166,6 @@ class ModelModule(LightningModule):
             if self.cfg.data.modality == "audiovisual":
                 self.log("audio_acc", accs["audio"], on_step=False, on_epoch=True, batch_size=batch_size)
                 self.log("vid_acc", accs["video"], on_step=False, on_epoch=True, batch_size=batch_size)
-                self.log("both_acc", accs["audiovisual"], on_step=False, on_epoch=True, batch_size=batch_size)
         else:
             self.log("loss_val", loss, batch_size=batch_size)
             self.log("loss_ctc_val", loss_ctc, batch_size=batch_size)
@@ -175,7 +174,6 @@ class ModelModule(LightningModule):
             if self.cfg.data.modality == "audiovisual":
                 self.log("audio_acc_val", accs["audio"], batch_size=batch_size)
                 self.log("vid_acc_val", accs["video"], batch_size=batch_size)
-                self.log("both_acc_val", accs["audiovisual"], batch_size=batch_size)
 
         if step_type == "train":
             self.log("monitoring_step", torch.tensor(self.global_step, dtype=torch.float32))
@@ -190,8 +188,8 @@ class ModelModule(LightningModule):
 
     def on_test_epoch_start(self):
         if self.cfg.data.modality == "audiovisual":
-            self.total_edit_distance = {"audio": 0, "video": 0, "audiovisual": 0}
-            self.total_length = {"audio": 0, "video": 0, "audiovisual": 0}
+            self.total_edit_distance = {"audio": 0, "video": 0}
+            self.total_length = {"audio": 0, "video": 0}
         else:
             self.total_edit_distance = 0
             self.total_length = 0
