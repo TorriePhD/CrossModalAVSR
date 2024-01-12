@@ -74,7 +74,7 @@ class ModelModule(LightningModule):
                     self.model.load_state_dict(new_state_dict, strict=True)                    
                 elif self.cfg.data.modality == "audiovisual":
                     #check if audioEncoder is in the ckpt
-                    if "audioEncoder" in ckpt:
+                    if len([k for k, v in ckpt.items() if "audioEncoder" in k]) > 0:
                         self.model.load_state_dict(ckpt, strict=True)
                     else:
                         #load video encoder remove encoder. prefix
