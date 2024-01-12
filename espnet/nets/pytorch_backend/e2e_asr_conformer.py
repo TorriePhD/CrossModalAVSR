@@ -32,7 +32,7 @@ class E2E(torch.nn.Module):
         self.ignore_id = ignore_id
         if isinstance(args, dict):
             self.crossmodal = True
-            self.audioEcoder = self.createEncoder(args["audio_backbone"])
+            self.audioEncoder = self.createEncoder(args["audio_backbone"])
             self.videoEncoder = self.createEncoder(args["visual_backbone"])
             self.transformer_input_layer = {}
             self.transformer_input_layer["audio"] = args["audio_backbone"].transformer_input_layer
@@ -166,7 +166,7 @@ class E2E(torch.nn.Module):
     def getAudioFeatures(self, audio, vidSize,padding_mask=None,):
         if len(audio.size()) == 2:
             audio = audio.unsqueeze(0)
-        xAudio,_ = self.audioEcoder(audio, padding_mask)
+        xAudio,_ = self.audioEncoder(audio, padding_mask)
         size = vidSize
         #padd xAud to match size of xVid
         xAudio = torch.nn.functional.pad(xAudio, (0, 0, 0, size - xAudio.size(1)), "constant")
