@@ -58,7 +58,7 @@ class ModelModule(LightningModule):
                     #remove audioEncoder and fusion in 
                     state_dict = {k: v for k, v in state_dict.items() if not "audioEncoder" in k and not "fusion" in k}
                 else:
-                    state_dict = {k.replace("encoder.", "videoEncoder."): v for k, v in state_dict.items()}
+                    state_dict = {k.replace("encoder.", "videoEncoder."): v for k, v in state_dict.items() if not "fusion" in k}
                 self.model.load_state_dict(state_dict, strict=True)
 
             else:
@@ -163,7 +163,6 @@ class ModelModule(LightningModule):
             if self.cfg.data.modality == "audiovisual":
                 self.log("audio_acc", accs["audio"], on_step=False, on_epoch=True, batch_size=batch_size)
                 self.log("vid_acc", accs["video"], on_step=False, on_epoch=True, batch_size=batch_size)
-                self.log("both_acc", accs["audiovisual"], on_step=False, on_epoch=True, batch_size=batch_size)
             elif self.cfg.data.modality == "audio":
                 self.log("audio_acc", acc, on_step=False, on_epoch=True, batch_size=batch_size)
             elif self.cfg.data.modality == "video":
@@ -176,7 +175,6 @@ class ModelModule(LightningModule):
             if self.cfg.data.modality == "audiovisual":
                 self.log("audio_acc_val", accs["audio"], batch_size=batch_size)
                 self.log("vid_acc_val", accs["video"], batch_size=batch_size)
-                self.log("both_acc_val", accs["audiovisual"], batch_size=batch_size)
             elif self.cfg.data.modality == "audio":
                 self.log("audio_acc_val", acc, batch_size=batch_size)
             elif self.cfg.data.modality == "video":

@@ -9,6 +9,7 @@ from pytorch_lightning.plugins import DDPPlugin
 from pytorch_lightning.loggers import TensorBoardLogger
 from avg_ckpts import ensemble
 from datamodule.data_module import DataModule
+from pathlib import Path
 
 
 
@@ -16,6 +17,12 @@ from datamodule.data_module import DataModule
 def main(cfg):
     seed_everything(42, workers=True)
     cfg.gpus = torch.cuda.device_count()
+
+    if cfg.trainer.resume_from_checkpoint is not None:
+        if not Path(cfg.trainer.resume_from_checkpoint).is_file():
+            cfg.trainer.resume_from_checkpoint = None
+        else:
+            cfg.pretrained_model_path = None
 
     checkpoint = ModelCheckpoint(
         monitor="monitoring_step",
