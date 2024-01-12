@@ -55,11 +55,11 @@ class ModelModule(LightningModule):
             
                 state_dict = {k.replace("aux_encoder", "audioEncoder"): v for k, v in ckpt.items()}
                 if self.cfg.data.modality == "video":
-                    #remove audioEncoder and fusion
-                    state_dict = {k: v for k, v in state_dict.items() if not k.startswith("audioEncoder") or not k.startswith("fusion")}
+                    #remove audioEncoder and fusion in 
+                    state_dict = {k: v for k, v in state_dict.items() if not "audioEncoder" in k and not "fusion" in k}
                 else:
                     state_dict = {k.replace("encoder.", "videoEncoder."): v for k, v in state_dict.items()}
-                    self.model.load_state_dict(state_dict, strict=True)
+                self.model.load_state_dict(state_dict, strict=True)
 
             else:
                 if self.cfg.data.modality == "video":
@@ -164,6 +164,10 @@ class ModelModule(LightningModule):
                 self.log("audio_acc", accs["audio"], on_step=False, on_epoch=True, batch_size=batch_size)
                 self.log("vid_acc", accs["video"], on_step=False, on_epoch=True, batch_size=batch_size)
                 self.log("both_acc", accs["audiovisual"], on_step=False, on_epoch=True, batch_size=batch_size)
+            elif self.cfg.data.modality == "audio":
+                self.log("audio_acc", acc, on_step=False, on_epoch=True, batch_size=batch_size)
+            elif self.cfg.data.modality == "video":
+                self.log("vid_acc", acc, on_step=False, on_epoch=True, batch_size=batch_size)
         else:
             self.log("loss_val", loss, batch_size=batch_size)
             self.log("loss_ctc_val", loss_ctc, batch_size=batch_size)
@@ -173,6 +177,11 @@ class ModelModule(LightningModule):
                 self.log("audio_acc_val", accs["audio"], batch_size=batch_size)
                 self.log("vid_acc_val", accs["video"], batch_size=batch_size)
                 self.log("both_acc_val", accs["audiovisual"], batch_size=batch_size)
+            elif self.cfg.data.modality == "audio":
+                self.log("audio_acc_val", acc, batch_size=batch_size)
+            elif self.cfg.data.modality == "video":
+                self.log("vid_acc_val", acc, batch_size=batch_size)
+                
 
         if step_type == "train":
             self.log("monitoring_step", torch.tensor(self.global_step, dtype=torch.float32))
