@@ -19,7 +19,7 @@ class AVSRDataLoader:
                 from detectors.retinaface.detector import LandmarksDetector
                 from detectors.retinaface.video_process import VideoProcess
 
-                self.landmarks_detector = LandmarksDetector(device="cuda:0")
+                self.landmarks_detector = LandmarksDetector(device="cpu")
                 self.video_process = VideoProcess(convert_gray=convert_gray)
 
             if detector == "mediapipe":

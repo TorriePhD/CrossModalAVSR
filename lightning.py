@@ -60,7 +60,7 @@ class ModelModule(LightningModule):
                 else:
                     state_dict = {k.replace("encoder.", "videoEncoder."): v for k, v in state_dict.items() if not "fusion" in k}
                 self.model.load_state_dict(state_dict, strict=True)
-            elif "asr" in self.cfg.pretrained_model_path:
+            elif "asr" in self.cfg.pretrained_model_path and self.cfg.data.modality != "audio":
                 encoderEncoderStateDict = {k.replace("encoder.encoders.", ""): v for k, v in ckpt.items() if k.startswith("encoder.encoders.")}
                 encoderEmbedStatDict = {k.replace("encoder.embed.", ""): v for k, v in ckpt.items() if k.startswith("encoder.embed.")}
 
@@ -77,9 +77,9 @@ class ModelModule(LightningModule):
                     self.model.videoEncoder.encoders.load_state_dict(encoderEncoderStateDict, strict=True)
                     #load video encoder.embed
                     self.model.videoEncoder.embed.load_state_dict(encoderEmbedStatDict, strict=True)
-                    
-
-
+                #load decoder state_dict
+                decoderStateDict = {k.replace("decoder.", ""): v for k, v in ckpt.items() if k.startswith("decoder.")}
+                self.model.decoder.load_state_dict(decoderStateDict, strict=True)
             else:
                 if self.cfg.data.modality == "video":
                     new_state_dict = {}
