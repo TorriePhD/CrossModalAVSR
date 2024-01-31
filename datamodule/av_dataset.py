@@ -3,7 +3,7 @@ import os
 import torch
 import torchaudio
 import torchvision
-
+from pathlib import Path
 
 def cut_or_pad(data, size, dim=0):
     """
@@ -118,9 +118,15 @@ class AVDataset(torch.utils.data.Dataset):
         video = None
         audio = None
         if "video" in modality or "visual" in modality:
+            if not Path(path).exists():
+                #raise error
+                print("vid path not exists: ", path)                
             video = load_video(path)
             video = self.video_transform(video)
         if "audio" in modality:
+            if not Path(path[:-4] + ".wav").exists():
+                #raise error
+                print("audio path not exists: ", path[:-4] + ".wav")
             audio = load_audio(path)
             audio = self.audio_transform(audio)
         return {"input":{"video": video, "audio": audio}, "target": token_id}

@@ -125,7 +125,10 @@ def extract_archive(datasetPath, datasetDescription):
         print("Dataset extracted.")
     finally:
         if workingFile.exists():
-            workingFile.unlink()
+            try:
+                workingFile.unlink()
+            except:
+                pass
 
     return savePath
 
@@ -149,11 +152,17 @@ if dataset == "lrs3":
         extract_archive(Path(args.data_dir)/"lrs3_trainval.zip", datasetDescription)
     elif args.subset == "test":
         extract_archive(Path(args.data_dir)/"lrs3_test_v0.4.zip", datasetDescription)
-
+elif dataset == "lrs2":
+    extract_archive(Path(args.data_dir)/"lrs2_v1.tar", datasetDescription)
 args.data_dir = os.path.normpath(f"/tmp/{datasetDescription}")
 if args.landmarks_dir and (Path(args.landmarks_dir).suffix == ".zip" or Path(args.landmarks_dir).suffix == ".tar"):
-    args.landmarks_dir = os.path.normpath(extract_archive(args.landmarks_dir, datasetDescription))
-    args.landmarks_dir = os.path.join(args.landmarks_dir, f"LRS3_landmarks")
+    args.landmarks_dir = os.path.normpath(extract_archive(args.landmarks_dir, datasetDescription+"landmarks"))
+    # args.landmarks_dir = os.path.join(args.landmarks_dir, f"LRS3_landmarks")
+    #use tmp
+    if dataset == "lrs3":
+        args.landmarks_dir = os.path.join("/tmp/", datasetDescription+"landmarks", "LRS3_landmarks")
+    elif dataset == "lrs2":
+       args.landmarks_dir = os.path.join("/tmp/", datasetDescription+"landmarks", "LRS2_landmarks")
 vid_dataloader = AVSRDataLoader(
     modality="video", detector=args.detector, convert_gray=False
 )
@@ -194,7 +203,7 @@ if dataset == "lrs3":
 elif dataset == "lrs2":
     if args.subset in ["val", "test"]:
         filenames = [
-            os.path.join(args.data_dir, "main", _.split()[0] + ".mp4")
+            os.path.join(args.data_dir, "mvlrs_v1","main", _.split()[0] + ".mp4")
             for _ in open(
                 os.path.join(os.path.dirname(args.data_dir), args.subset) + ".txt"
             )
@@ -203,7 +212,7 @@ elif dataset == "lrs2":
         ]
     elif args.subset == "train":
         filenames = [
-            os.path.join(args.data_dir, "main", _.split()[0] + ".mp4")
+            os.path.join(args.data_dir, "mvlrs_v1","main", _.split()[0] + ".mp4")
             for _ in open(
                 os.path.join(os.path.dirname(args.data_dir), args.subset) + ".txt"
             )
@@ -211,7 +220,7 @@ elif dataset == "lrs2":
             .splitlines()
         ]
         pretrain_filenames = [
-            os.path.join(args.data_dir, "pretrain", _.split()[0] + ".mp4")
+            os.path.join(args.data_dir,"mvlrs_v1", "pretrain", _.split()[0] + ".mp4")
             for _ in open(os.path.join(os.path.dirname(args.data_dir), "pretrain.txt"))
             .read()
             .splitlines()

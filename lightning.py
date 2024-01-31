@@ -62,24 +62,33 @@ class ModelModule(LightningModule):
                 self.model.load_state_dict(state_dict, strict=True)
             elif "asr" in self.cfg.pretrained_model_path and self.cfg.data.modality != "audio":
                 encoderEncoderStateDict = {k.replace("encoder.encoders.", ""): v for k, v in ckpt.items() if k.startswith("encoder.encoders.")}
-                encoderEmbedStatDict = {k.replace("encoder.embed.", ""): v for k, v in ckpt.items() if k.startswith("encoder.embed.")}
+                # encoderEmbedStatDict = {k.replace("encoder.embed.", ""): v for k, v in ckpt.items() if k.startswith("encoder.embed.")}
 
                 if self.cfg.data.modality == "video":
+                    videoPath = "/home/st392/fsl_groups/grp_lip/compute/results/crossModalFinetuned/audioVisualNoComb/model_avg_10.pth"
                     #get encoder.encoders state_dict 
-                    self.model.encoder.encoders.load_state_dict(encoderEncoderStateDict, strict=True)
+                    videoCkpt = torch.load(videoPath, map_location=lambda storage, loc: storage)
+                    encoderStateDict = {k.replace("videoEncoder.", ""): v for k, v in videoCkpt.items() if k.startswith("videoEncoder.")}
+                    self.model.encoder.load_state_dict(encoderStateDict, strict=True)
                     #get encoder.embed state_dict
-                    self.model.encoder.embed.load_state_dict(encoderEmbedStatDict, strict=True)
+                    # self.model.encoder.embed.load_state_dict(encoderEmbedStatDict, strict=True)
                 elif self.cfg.data.modality == "audiovisual":
                     #load audio encoder
                     encoderStateDict = {k.replace("encoder.", ""): v for k, v in ckpt.items() if k.startswith("encoder.")}
                     self.model.audioEncoder.load_state_dict(encoderStateDict, strict=True)
                     #load video encoder.encoders
-                    self.model.videoEncoder.encoders.load_state_dict(encoderEncoderStateDict, strict=True)
+                    videoPath = "/home/st392/fsl_groups/grp_lip/compute/results/crossModalFinetuned/audioVisualNoComb/model_avg_10.pth"
+                    videoCkpt = torch.load(videoPath, map_location=lambda storage, loc: storage)
+                    encoderStateDict = {k.replace("videoEncoder.", ""): v for k, v in videoCkpt.items() if k.startswith("videoEncoder.")}
+                    self.model.videoEncoder.load_state_dict(encoderStateDict, strict=True)
                     #load video encoder.embed
-                    self.model.videoEncoder.embed.load_state_dict(encoderEmbedStatDict, strict=True)
-                #load decoder state_dict
-                decoderStateDict = {k.replace("decoder.", ""): v for k, v in ckpt.items() if k.startswith("decoder.")}
-                self.model.decoder.load_state_dict(decoderStateDict, strict=True)
+                    # self.model.videoEncoder.embed.load_state_dict(encoderEmbedStatDict, strict=True)
+                #load decoder.decoders state_dict
+                decodersStateDict = {k.replace("decoder.decoders.", ""): v for k, v in ckpt.items() if k.startswith("decoder.decoders.")}
+                self.model.decoder.decoders.load_state_dict(decodersStateDict, strict=True)
+                #load the decoder.after_norm state_dict
+                afterNormStateDict = {k.replace("decoder.after_norm.", ""): v for k, v in ckpt.items() if k.startswith("decoder.after_norm.")}
+                self.model.decoder.after_norm.load_state_dict(afterNormStateDict, strict=True)                
             else:
                 if self.cfg.data.modality == "video":
                     new_state_dict = {}
