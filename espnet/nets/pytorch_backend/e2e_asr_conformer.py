@@ -258,8 +258,8 @@ class E2E(torch.nn.Module):
         enc_feat, lengths, padding_mask, label, modalities = self.getAllModalFeatures(x,lengths,label)
         # loss_ctcMod, ys_hat = self.ctc(enc_feat, lengths["video"], label)
         # loss_ctc = loss_ctcMod
-        audioLoss_ctcMod, ys_hat = self.ctc(enc_feat[modalities==1], lengths["video"], label[modalities==1])
-        videoLoss_ctcMod, ys_hat = self.ctc(enc_feat[modalities==0], lengths["video"], label[modalities==0])
+        audioLoss_ctcMod, ys_hat = self.ctc(enc_feat[modalities==1], lengths["video"][modalities==1], label[modalities==1])
+        videoLoss_ctcMod, ys_hat = self.ctc(enc_feat[modalities==0], lengths["video"][modalities==0], label[modalities==0])
         # decoder loss
         ys_in_pad, ys_out_pad = add_sos_eos(label, self.sos, self.eos, self.ignore_id)
         ys_mask = target_mask(ys_in_pad, self.ignore_id)
