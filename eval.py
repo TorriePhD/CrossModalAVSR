@@ -7,12 +7,12 @@ import torch
 from pytorch_lightning import Trainer
 from lightning import ModelModule
 from datamodule.data_module import DataModule
-from lightning import ModelModule
-
 
 
 @hydra.main(version_base="1.3", config_path="configs", config_name="config")
 def main(cfg):
+    # Set modules and trainer
+    from lightning import ModelModule
     modelmodule = ModelModule(cfg)
     datamodule = DataModule(cfg)
     trainer = Trainer(num_nodes=1, gpus=1)

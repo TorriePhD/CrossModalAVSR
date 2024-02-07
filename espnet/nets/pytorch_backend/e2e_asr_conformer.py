@@ -261,9 +261,9 @@ class E2E(torch.nn.Module):
         return enc_feat, lengths, padding_mask, label, modalities
     def forward_crossmodal(self, x, lengths, label):
         enc_feat, lengths, padding_mask, label, modalities = self.getAllModalFeatures(x,lengths,label)
-        loss_ctcMod, ys_hat = self.ctc(enc_feat, lengths["video"], label)
-        loss_ctc = loss_ctcMod
-        
+        audioLoss_ctcMod, ys_hat = self.ctc(enc_feat[modalities==1], lengths["video"][modalities==1], label[modalities==1])
+        videoLoss_ctcMod, ys_hat = self.ctc(enc_feat[modalities==0], lengths["video"][modalities==0], label[modalities==0])
+        audiovisualLoss_ctcMod, ys_hat = self.ctc(enc_feat[modalities==2], lengths["video"][modalities==2], label[modalities==2])
         # decoder loss
         ys_in_pad, ys_out_pad = add_sos_eos(label, self.sos, self.eos, self.ignore_id)
         ys_mask = target_mask(ys_in_pad, self.ignore_id)
@@ -271,9 +271,18 @@ class E2E(torch.nn.Module):
             pred_pad, _ = self.decoder(ys_in_pad, ys_mask, enc_feat, padding_mask["video"])
         else:
             pred_pad = None
-        loss_att = self.criterion(pred_pad, ys_out_pad)
-        loss = self.mtlalpha * loss_ctc + (1 - self.mtlalpha) * loss_att
-
+        audioLoss_att = self.criterion(pred_pad[modalities==1], ys_out_pad[modalities==1])
+        videoLoss_att = self.criterion(pred_pad[modalities==0], ys_out_pad[modalities==0])
+        audiovisualLoss_att = self.criterion(pred_pad[modalities==2], ys_out_pad[modalities==2])
+        audiovisualWeight = .1
+        audioWeight = .5
+        videoWeight = 1
+        audioLoss = self.mtlalpha * audioLoss_ctcMod + (1 - self.mtlalpha) * audioLoss_att
+        videoLoss = self.mtlalpha * videoLoss_ctcMod + (1 - self.mtlalpha) * videoLoss_att
+        audiovisualLoss = self.mtlalpha * audiovisualLoss_ctcMod + (1 - self.mtlalpha) * audiovisualLoss_att
+        loss = audioWeight * audioLoss + videoWeight * videoLoss + audiovisualWeight * audiovisualLoss
+        loss_ctc = audioWeight * audioLoss_ctcMod + videoWeight * videoLoss_ctcMod + audiovisualWeight * audiovisualLoss_ctcMod
+        loss_att = audioWeight * audioLoss_att + videoWeight * videoLoss_att + audiovisualWeight * audiovisualLoss_att
         accAll = th_accuracy(
             pred_pad.view(-1, self.odim), ys_out_pad, ignore_label=self.ignore_id
         )
