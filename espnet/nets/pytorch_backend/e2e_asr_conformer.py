@@ -35,6 +35,8 @@ class E2E(torch.nn.Module):
             self.crossmodal = True
             self.audioEncoder = self.createEncoder(args["audio_backbone"])
             self.videoEncoder = self.createEncoder(args["visual_backbone"])
+            #share the encoder layers between audio and video
+            self.audioEncoder.encoders = self.videoEncoder.encoders
             self.transformer_input_layer = {}
             self.transformer_input_layer["audio"] = args["audio_backbone"].transformer_input_layer
             self.transformer_input_layer["video"] = args["visual_backbone"].transformer_input_layer
