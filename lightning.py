@@ -27,7 +27,7 @@ class ModelModule(LightningModule):
             self.backbone_args = {}
             self.backbone_args["audio_backbone"] = self.cfg.model.audio_backbone
             self.backbone_args["visual_backbone"] = self.cfg.model.visual_backbone
-            self.backbone_args["fusion"] = self.cfg.model.fusion
+            self.backbone_args["mamba"] = self.cfg.model.mamba
 
         self.text_transform = TextTransform()
         self.token_list = self.text_transform.token_list

@@ -40,6 +40,7 @@ def main(cfg):
     from lightning import ModelModule
     # elif cfg.data.modality == "audiovisual":
     #     from lightning_av import ModelModule
+    print(cfg.model)
     modelmodule = ModelModule(cfg)
     datamodule = DataModule(cfg)
     #get name of exp_dir

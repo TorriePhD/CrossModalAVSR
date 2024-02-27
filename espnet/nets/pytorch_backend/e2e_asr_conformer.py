@@ -6,7 +6,9 @@
 import logging
 import numpy
 import torch
-
+from mamba_ssm import Mamba
+from espnet.nets.pytorch_backend.backbones.conv1d_extractor import Conv1dResNet
+from espnet.nets.pytorch_backend.backbones.conv3d_extractor import Conv3dResNet
 from espnet.nets.pytorch_backend.ctc import CTC
 from espnet.nets.pytorch_backend.nets_utils import (
     make_non_pad_mask,
@@ -33,8 +35,16 @@ class E2E(torch.nn.Module):
         self.ignore_id = ignore_id
         if isinstance(args, dict):
             self.crossmodal = True
-            self.audioEncoder = self.createEncoder(args["audio_backbone"])
-            self.videoEncoder = self.createEncoder(args["visual_backbone"])
+            # self.audioEncoder = self.createEncoder(args["audio_backbone"])
+            # self.videoEncoder = self.createEncoder(args["visual_backbone"])
+            self.audioFrontEnd = Conv1dResNet(relu_type = args["audio_backbone"].relu_type ,a_upsample_ratio = args["audio_backbone"].a_upsample_ratio)
+            self.videoFrontEnd = Conv3dResNet(relu_type = args["visual_backbone"].relu_type)
+            self.mamba = Mamba(
+                d_model=args["visual_backbone"].adim,
+                d_state=args["mamba"].d_state,
+                d_conv=args["mamba"].d_conv,
+                expand=args["mamba"].expand,
+            ).cuda()
             #share the encoder layers between audio and video
             self.audioEncoder.encoders = self.videoEncoder.encoders
             self.transformer_input_layer = {}
@@ -50,18 +60,18 @@ class E2E(torch.nn.Module):
             #     self.proj_decoder["audio"] = torch.nn.Linear(args["audio_backbone"].adim, args["audio_backbone"].ddim)
             # if args["visual_backbone"].adim != args["visual_backbone"].ddim:
             #     self.proj_decoder["video"] = torch.nn.Linear(args["visual_backbone"].adim, args["visual_backbone"].ddim)
-            if args["audio_backbone"].mtlalpha < 1 or args["visual_backbone"].mtalpha < 1:
-                self.decoder = Decoder(
-                    odim=odim,
-                    attention_dim=args["visual_backbone"].ddim,
-                    attention_heads=args["visual_backbone"].dheads,
-                    linear_units=args["visual_backbone"].dunits,
-                    num_blocks=args["visual_backbone"].dlayers,
-                    dropout_rate=args["visual_backbone"].dropout_rate,
-                    positional_dropout_rate=args["visual_backbone"].dropout_rate,
-                    self_attention_dropout_rate=args["visual_backbone"].transformer_attn_dropout_rate,
-                    src_attention_dropout_rate=args["visual_backbone"].transformer_attn_dropout_rate,
-                )
+            # if args["audio_backbone"].mtlalpha < 1 or args["visual_backbone"].mtalpha < 1:
+            #     self.decoder = Decoder(
+            #         odim=odim,
+            #         attention_dim=args["visual_backbone"].ddim,
+            #         attention_heads=args["visual_backbone"].dheads,
+            #         linear_units=args["visual_backbone"].dunits,
+            #         num_blocks=args["visual_backbone"].dlayers,
+            #         dropout_rate=args["visual_backbone"].dropout_rate,
+            #         positional_dropout_rate=args["visual_backbone"].dropout_rate,
+            #         self_attention_dropout_rate=args["visual_backbone"].transformer_attn_dropout_rate,
+            #         src_attention_dropout_rate=args["visual_backbone"].transformer_attn_dropout_rate,
+            #     )
         #     self.fusion = MLPHead(
         #     idim=args["audio_backbone"].adim + args["visual_backbone"].adim,
         #     hdim = args["fusion"].fusion_hdim,
@@ -174,13 +184,16 @@ class E2E(torch.nn.Module):
     def getAudioFeatures(self, audio, vidSize,padding_mask=None,):
         if len(audio.size()) == 2:
             audio = audio.unsqueeze(0)
-        xAudio,_ = self.audioEncoder(audio, padding_mask)
+        xAudio = self.audioFrontEnd(audio)
+        xAudio = self.mamba(xAudio)
         size = vidSize
         #padd xAud to match size of xVid
         xAudio = torch.nn.functional.pad(xAudio, (0, 0, 0, size - xAudio.size(1)), "constant")
         return xAudio
     def getVideoFeatures(self, video, padding_mask=None):
-        xVideo,_ = self.videoEncoder(video, padding_mask)
+        xVideo = self.videoFrontEnd(video)
+        xVideo = self.mamba(xVideo)
+        # xVideo,_ = self.videoEncoder(video, padding_mask)
         return xVideo
     # def getCombinedFeatures(self, xVideo, xAudio):
     #     x_combined = torch.cat((xVideo, xAudio), dim=2)

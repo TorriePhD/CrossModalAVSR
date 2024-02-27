@@ -163,7 +163,6 @@ class Encoder(torch.nn.Module):
         """
         if isinstance(self.frontend, (Conv1dResNet, Conv3dResNet)):
             xs = self.frontend(xs)
-
         xs = self.embed(xs)
         xs, masks = self.encoders(xs, masks)
 
@@ -186,9 +185,8 @@ class Encoder(torch.nn.Module):
         """
         if isinstance(self.frontend, (Conv1dResNet, Conv3dResNet)):
             xs = self.frontend(xs)
-
+        print(f"xs.shape: {xs.shape}")
         xs = self.embed(xs)
-
         if cache is None:
             cache = [None for _ in range(len(self.encoders))]
         new_cache = []
