@@ -1,3 +1,4 @@
-d_state: 16
-d_conv: 8
-expand: 4
+d_state: 4
+d_conv: 2
+expand: 1
+projectBefore: True

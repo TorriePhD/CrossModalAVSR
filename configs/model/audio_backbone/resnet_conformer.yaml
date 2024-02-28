@@ -1,4 +1,4 @@
-adim: 768
+adim: 512
 aheads: 12
 eunits: 3072
 elayers: 12

@@ -33,20 +33,24 @@ class E2E(torch.nn.Module):
         self.eos = odim - 1
         self.odim = odim
         self.ignore_id = ignore_id
+        self.adim = args["visual_backbone"].adim
         if isinstance(args, dict):
             self.crossmodal = True
             # self.audioEncoder = self.createEncoder(args["audio_backbone"])
             # self.videoEncoder = self.createEncoder(args["visual_backbone"])
             self.audioFrontEnd = Conv1dResNet(relu_type = args["audio_backbone"].relu_type ,a_upsample_ratio = args["audio_backbone"].a_upsample_ratio)
             self.videoFrontEnd = Conv3dResNet(relu_type = args["visual_backbone"].relu_type)
+            self.projectBefore = args["mamba"].projectBefore
+            self.mambaOut = self.adim if not self.projectBefore else self.odim
             self.mamba = Mamba(
-                d_model=args["visual_backbone"].adim,
+                d_model=self.mambaOut,
                 d_state=args["mamba"].d_state,
                 d_conv=args["mamba"].d_conv,
                 expand=args["mamba"].expand,
             ).cuda()
+            self.projection = torch.nn.Linear(self.adim, self.odim)
             #share the encoder layers between audio and video
-            self.audioEncoder.encoders = self.videoEncoder.encoders
+            # self.audioEncoder.encoders = self.videoEncoder.encoders
             self.transformer_input_layer = {}
             self.transformer_input_layer["audio"] = args["audio_backbone"].transformer_input_layer
             self.transformer_input_layer["video"] = args["visual_backbone"].transformer_input_layer
@@ -84,11 +88,10 @@ class E2E(torch.nn.Module):
                 args["visual_backbone"].lsm_weight,
                 args["visual_backbone"].transformer_length_normalized_loss,
             )
-            self.adim = args["visual_backbone"].adim
             self.mtlalpha = args["visual_backbone"].mtlalpha
             if args["visual_backbone"].mtlalpha > 0.0:
                 self.ctc = CTC(
-                    odim, args["visual_backbone"].adim, args["visual_backbone"].dropout_rate, ctc_type=args["visual_backbone"].ctc_type, reduce=True
+                    odim, self.mambaOut, args["visual_backbone"].dropout_rate, ctc_type=args["visual_backbone"].ctc_type, reduce=True
                 )
             else:
                 self.ctc = None
@@ -185,14 +188,22 @@ class E2E(torch.nn.Module):
         if len(audio.size()) == 2:
             audio = audio.unsqueeze(0)
         xAudio = self.audioFrontEnd(audio)
+        if self.projectBefore:
+            xAudio = self.projection(xAudio)
         xAudio = self.mamba(xAudio)
+        if not self.projectBefore:
+            xAudio = self.projection(xAudio)
         size = vidSize
         #padd xAud to match size of xVid
         xAudio = torch.nn.functional.pad(xAudio, (0, 0, 0, size - xAudio.size(1)), "constant")
         return xAudio
     def getVideoFeatures(self, video, padding_mask=None):
         xVideo = self.videoFrontEnd(video)
+        if self.projectBefore:
+            xVideo = self.projection(xVideo)
         xVideo = self.mamba(xVideo)
+        if not self.projectBefore:
+            xVideo = self.projection(xVideo)
         # xVideo,_ = self.videoEncoder(video, padding_mask)
         return xVideo
     # def getCombinedFeatures(self, xVideo, xAudio):
@@ -244,7 +255,7 @@ class E2E(torch.nn.Module):
             padding_mask = None
         vidSize = x["video"].size(1)
         # modalities = self.getModalities(x)
-        enc_feat = torch.zeros(x['video'].size(0)*2, x['video'].size(1), self.adim, device=x["video"].device)
+        enc_feat = torch.zeros(x['video'].size(0)*2, x['video'].size(1), self.mambaOut, device=x["video"].device)
         modalities = torch.cat((torch.zeros(x['video'].size(0), dtype=torch.long, device=x["video"].device),
                                 torch.ones(x['video'].size(0), dtype=torch.long, device=x["video"].device)))
 
@@ -277,21 +288,22 @@ class E2E(torch.nn.Module):
         # decoder loss
         ys_in_pad, ys_out_pad = add_sos_eos(label, self.sos, self.eos, self.ignore_id)
         ys_mask = target_mask(ys_in_pad, self.ignore_id)
-        if self.mtlalpha < 1:
-            pred_pad, _ = self.decoder(ys_in_pad, ys_mask, enc_feat, padding_mask["video"])
-        else:
-            pred_pad = None
-        loss_att = self.criterion(pred_pad, ys_out_pad)
+        # if self.mtlalpha < 1:
+        #     pred_pad, _ = self.decoder(ys_in_pad, ys_mask, enc_feat, padding_mask["video"])
+        # else:
+        #     pred_pad = None
+        print(enc_feat.size(), ys_in_pad.size())
+        loss_att = self.criterion(enc_feat, ys_out_pad)
         loss = self.mtlalpha * loss_ctc + (1 - self.mtlalpha) * loss_att
 
         accAll = th_accuracy(
-            pred_pad.view(-1, self.odim), ys_out_pad, ignore_label=self.ignore_id
+            enc_feat.view(-1, self.odim), ys_out_pad, ignore_label=self.ignore_id
         )
         acc = {}
         acc["video"] = th_accuracy(
-            pred_pad[modalities==0].view(-1, self.odim), ys_out_pad[modalities==0], ignore_label=self.ignore_id
+            enc_feat[modalities==0].view(-1, self.odim), ys_out_pad[modalities==0], ignore_label=self.ignore_id
         )
         acc["audio"] = th_accuracy(
-            pred_pad[modalities==1].view(-1, self.odim), ys_out_pad[modalities==1], ignore_label=self.ignore_id
+            enc_feat[modalities==1].view(-1, self.odim), ys_out_pad[modalities==1], ignore_label=self.ignore_id
         )
         return loss, loss_ctc, loss_att, accAll, acc
