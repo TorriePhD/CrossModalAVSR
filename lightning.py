@@ -31,11 +31,7 @@ class ModelModule(LightningModule):
 
         self.text_transform = TextTransform()
         self.token_list = self.text_transform.token_list
-        print(len(self.token_list))
         self.model = E2E(len(self.token_list), self.backbone_args)
-        #print parameter count
-        print(f"Parameter count: {sum(p.numel() for p in self.model.parameters() if p.requires_grad)}")
-
         # -- initialise
         if self.cfg.pretrained_model_path:
             ckpt = torch.load(self.cfg.pretrained_model_path, map_location=lambda storage, loc: storage)

@@ -292,7 +292,8 @@ class E2E(torch.nn.Module):
         #     pred_pad, _ = self.decoder(ys_in_pad, ys_mask, enc_feat, padding_mask["video"])
         # else:
         #     pred_pad = None
-        print(enc_feat.size(), ys_in_pad.size())
+        #cut off the second dimention of the enc_feat tensor to match the length of the ys_out_pad tensor second dimention
+        enc_feat = enc_feat[:,:ys_out_pad.size(1),:].contiguous() # TODO This is probably not the best thing to do. We should make mamba output the same size as the ys_out_pad tensor. 
         loss_att = self.criterion(enc_feat, ys_out_pad)
         loss = self.mtlalpha * loss_ctc + (1 - self.mtlalpha) * loss_att
 
