@@ -19,7 +19,26 @@ from espnet.nets.pytorch_backend.transformer.positionwise_feed_forward import Po
 from espnet.nets.pytorch_backend.transformer.label_smoothing_loss import LabelSmoothingLoss
 from espnet.nets.pytorch_backend.transformer.mask import target_mask
 from espnet.nets.pytorch_backend.nets_utils import MLPHead
+import torch
+from espnet.nets.pytorch_backend.backbones.conv1d_extractor import Conv1dResNet
+from espnet.nets.pytorch_backend.backbones.conv3d_extractor import Conv3dResNet
 
+from espnet.nets.pytorch_backend.nets_utils import rename_state_dict
+
+from espnet.nets.pytorch_backend.transformer.attention import (
+    MultiHeadedAttention,  # noqa: H301
+    RelPositionMultiHeadedAttention,  # noqa: H301
+)
+from espnet.nets.pytorch_backend.transformer.convolution import ConvolutionModule
+from espnet.nets.pytorch_backend.transformer.embedding import (
+    PositionalEncoding,  # noqa: H301
+    RelPositionalEncoding,  # noqa: H301
+)
+from espnet.nets.pytorch_backend.transformer.encoder_layer import EncoderLayer
+from espnet.nets.pytorch_backend.transformer.layer_norm import LayerNorm
+from espnet.nets.pytorch_backend.transformer.positionwise_feed_forward import PositionwiseFeedForward
+
+from espnet.nets.pytorch_backend.transformer.repeat import repeat
 
 class E2E(torch.nn.Module):
     def __init__(self, odim, args, ignore_id=-1):
@@ -33,10 +52,19 @@ class E2E(torch.nn.Module):
         self.ignore_id = ignore_id
         if isinstance(args, dict):
             self.crossmodal = True
-            self.audioEncoder = self.createEncoder(args["audio_backbone"])
-            self.videoEncoder = self.createEncoder(args["visual_backbone"])
+            # self.audioEncoder = self.createEncoder(args["audio_backbone"])
+            # self.videoEncoder = self.createEncoder(args["visual_backbone"])
             #share the encoder layers between audio and video
-            self.audioEncoder.encoders = self.videoEncoder.encoders
+            # self.audioEncoder.encoders = self.videoEncoder.encoders
+            self.audioFrontEnd = Conv1dResNet(relu_type = args["audio_backbone"].relu_type ,a_upsample_ratio = args["audio_backbone"].a_upsample_ratio)
+            self.videoFrontEnd = Conv3dResNet(relu_type = args["visual_backbone"].relu_type)
+            pos_enc_class = PositionalEncoding
+            self.adim = args["audio_backbone"].adim
+            self.audioEmbed = torch.nn.Sequential(torch.nn.Linear(512, self.adim), pos_enc_class(self.adim, args["audio_backbone"].dropout_rate))
+            self.videoEmbed = torch.nn.Sequential(torch.nn.Linear(512, self.adim), pos_enc_class(self.adim, args["visual_backbone"].dropout_rate))
+            self.encoders = self.createEncoders(args["visual_backbone"])
+            self.audioAfterNorm = LayerNorm(self.adim)
+            self.videoAfterNorm = LayerNorm(self.adim)
             self.transformer_input_layer = {}
             self.transformer_input_layer["audio"] = args["audio_backbone"].transformer_input_layer
             self.transformer_input_layer["video"] = args["visual_backbone"].transformer_input_layer
@@ -122,8 +150,55 @@ class E2E(torch.nn.Module):
                 )
             else:
                 self.ctc = None
-        
+    def createEncoders(self, args):
+        encoder_attn_layer_type = args.transformer_encoder_attn_layer_type
+        attention_heads = args.aheads
+        attention_dim = args.adim
+        attention_dropout_rate = args.transformer_attn_dropout_rate
+        zero_triu = getattr(args, "zero_triu", False)
+        if encoder_attn_layer_type == "mha":
+                encoder_attn_layer = MultiHeadedAttention
+                encoder_attn_layer_args = (
+                    attention_heads,
+                    attention_dim,
+                    attention_dropout_rate,
+                )
+        elif encoder_attn_layer_type == "rel_mha":
+            encoder_attn_layer = RelPositionMultiHeadedAttention
+            encoder_attn_layer_args = (
+                attention_heads,
+                attention_dim,
+                attention_dropout_rate,
+                zero_triu,
+            )
+        else:
+            raise ValueError("unknown encoder_attn_layer: " + encoder_attn_layer)
+        cnn_module_kernel = args.cnn_module_kernel
+        convolution_layer = ConvolutionModule
+        convolution_layer_args = (attention_dim, cnn_module_kernel)
+        num_blocks = args.elayers
+        linear_units = args.eunits
+        dropout_rate = args.dropout_rate
+        positionwise_layer_args = (attention_dim, linear_units, dropout_rate)
+        use_cnn_module = args.use_cnn_module
+        normalize_before = True
+        concat_after = False
+        macaron_style = args.macaron_style
+        positionwise_layer = PositionwiseFeedForward
 
+        return repeat(
+            num_blocks,
+            lambda: EncoderLayer(
+                attention_dim,
+                encoder_attn_layer(*encoder_attn_layer_args),
+                positionwise_layer(*positionwise_layer_args),
+                convolution_layer(*convolution_layer_args) if use_cnn_module else None,
+                dropout_rate,
+                normalize_before,
+                concat_after,
+                macaron_style,
+            ),
+        )
         
     def createEncoder(self, args):
         return Encoder(
@@ -174,13 +249,26 @@ class E2E(torch.nn.Module):
     def getAudioFeatures(self, audio, vidSize,padding_mask=None,):
         if len(audio.size()) == 2:
             audio = audio.unsqueeze(0)
-        xAudio,_ = self.audioEncoder(audio, padding_mask)
+        # xAudio,_ = self.audioEncoder(audio, padding_mask)
+        xAudio = self.audioFrontEnd(audio)
+        xAudio = self.audioEmbed(xAudio)
+        mask = padding_mask
+        print("is xaudio a tuple: " if isinstance(xAudio, tuple) else "is not a tuple")
+        xAudio = self.encoders(xAudio, mask)
+        xAudio = self.audioAfterNorm(xAudio)
         size = vidSize
         #padd xAud to match size of xVid
         xAudio = torch.nn.functional.pad(xAudio, (0, 0, 0, size - xAudio.size(1)), "constant")
         return xAudio
     def getVideoFeatures(self, video, padding_mask=None):
-        xVideo,_ = self.videoEncoder(video, padding_mask)
+        # xVideo,_ = self.videoEncoder(video, padding_mask)
+        xVideo = self.videoFrontEnd(video)
+        xVideo = self.videoEmbed(xVideo)
+        mask =  padding_mask
+        print("is xvideo a tuple: " if isinstance(xVideo, tuple) else "is not a tuple")
+
+        xVideo = self.encoders(xVideo, mask)
+        xVideo = self.videoAfterNorm(xVideo)
         return xVideo
     # def getCombinedFeatures(self, xVideo, xAudio):
     #     x_combined = torch.cat((xVideo, xAudio), dim=2)
