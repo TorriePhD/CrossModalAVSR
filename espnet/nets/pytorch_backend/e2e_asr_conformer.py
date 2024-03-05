@@ -59,6 +59,8 @@ class E2E(torch.nn.Module):
             self.audioFrontEnd = Conv1dResNet(relu_type = args["audio_backbone"].relu_type ,a_upsample_ratio = args["audio_backbone"].a_upsample_ratio)
             self.videoFrontEnd = Conv3dResNet(relu_type = args["visual_backbone"].relu_type)
             pos_enc_class = PositionalEncoding
+            if args["visual_backbone"].transformer_encoder_attn_layer_type == "rel_mha":
+                pos_enc_class = RelPositionalEncoding
             self.adim = args["audio_backbone"].adim
             self.audioEmbed = torch.nn.Sequential(torch.nn.Linear(512, self.adim), pos_enc_class(self.adim, args["audio_backbone"].dropout_rate))
             self.videoEmbed = torch.nn.Sequential(torch.nn.Linear(512, self.adim), pos_enc_class(self.adim, args["visual_backbone"].dropout_rate))
@@ -253,8 +255,11 @@ class E2E(torch.nn.Module):
         xAudio = self.audioFrontEnd(audio)
         xAudio = self.audioEmbed(xAudio)
         mask = padding_mask
-        print("is xaudio a tuple: " if isinstance(xAudio, tuple) else "is not a tuple")
         xAudio = self.encoders(xAudio, mask)
+        if isinstance(xAudio, tuple):
+            xAudio = xAudio[0]
+        if isinstance(xAudio, tuple):
+            xAudio = xAudio[0]
         xAudio = self.audioAfterNorm(xAudio)
         size = vidSize
         #padd xAud to match size of xVid
@@ -265,9 +270,11 @@ class E2E(torch.nn.Module):
         xVideo = self.videoFrontEnd(video)
         xVideo = self.videoEmbed(xVideo)
         mask =  padding_mask
-        print("is xvideo a tuple: " if isinstance(xVideo, tuple) else "is not a tuple")
-
         xVideo = self.encoders(xVideo, mask)
+        if isinstance(xVideo, tuple):
+            xVideo = xVideo[0]
+        if isinstance(xVideo, tuple):
+            xVideo = xVideo[0]
         xVideo = self.videoAfterNorm(xVideo)
         return xVideo
     # def getCombinedFeatures(self, xVideo, xAudio):

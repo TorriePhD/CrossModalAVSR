@@ -82,10 +82,8 @@ class EncoderLayer(nn.Module):
         :rtype: Tuple[torch.Tensor, torch.Tensor]
         """
         if isinstance(x_input, tuple):
-            print("x_input is a tuple")
             x, pos_emb = x_input[0], x_input[1]
         else:
-            print("x_input is not a tuple")
             x, pos_emb = x_input, None
 
         # whether to use macaron style
