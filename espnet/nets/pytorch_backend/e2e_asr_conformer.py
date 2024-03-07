@@ -6,7 +6,8 @@
 import logging
 import numpy
 import torch
-from mamba_ssm import Mamba
+from espnet.nets.pytorch_backend.mamba.mixer_seq_simple import MambaLMHeadModel
+from mamba_ssm.models.config_mamba import MambaConfig
 from espnet.nets.pytorch_backend.backbones.conv1d_extractor import Conv1dResNet
 from espnet.nets.pytorch_backend.backbones.conv3d_extractor import Conv3dResNet
 from espnet.nets.pytorch_backend.ctc import CTC
@@ -36,52 +37,19 @@ class E2E(torch.nn.Module):
         self.adim = args["visual_backbone"].adim
         if isinstance(args, dict):
             self.crossmodal = True
-            # self.audioEncoder = self.createEncoder(args["audio_backbone"])
-            # self.videoEncoder = self.createEncoder(args["visual_backbone"])
             self.audioFrontEnd = Conv1dResNet(relu_type = args["audio_backbone"].relu_type ,a_upsample_ratio = args["audio_backbone"].a_upsample_ratio)
             self.videoFrontEnd = Conv3dResNet(relu_type = args["visual_backbone"].relu_type)
-            self.projectBefore = args["mamba"].projectBefore
-            self.mambaOut = self.adim if not self.projectBefore else self.odim
-            self.mamba = Mamba(
-                d_model=self.mambaOut,
-                d_state=args["mamba"].d_state,
-                d_conv=args["mamba"].d_conv,
-                expand=args["mamba"].expand,
-            ).cuda()
-            self.projection = torch.nn.Linear(self.adim, self.odim)
-            #share the encoder layers between audio and video
-            # self.audioEncoder.encoders = self.videoEncoder.encoders
+            self.videoEmbed = torch.nn.Linear(512, self.adim)
+            self.audioEmbed = torch.nn.Linear(512, self.adim)
+            self.mambaconfig = MambaConfig(d_model=self.adim,n_layer=args["mamba"].n_layer,vocab_size=self.odim,pad_vocab_size_multiple=4)
+            self.mamba = MambaLMHeadModel(self.mambaconfig,device="cuda",dtype=torch.float32).cuda()
             self.transformer_input_layer = {}
             self.transformer_input_layer["audio"] = args["audio_backbone"].transformer_input_layer
             self.transformer_input_layer["video"] = args["visual_backbone"].transformer_input_layer
             self.a_upsample_ratio = {}
             self.a_upsample_ratio["audio"] = args["audio_backbone"].a_upsample_ratio
             self.a_upsample_ratio["video"] = args["visual_backbone"].a_upsample_ratio
-            # self.proj_decoder = {}
-            # self.proj_decoder["audio"] = None
-            # self.proj_decoder["video"] = None
-            # if args["audio_backbone"].adim != args["audio_backbone"].ddim:
-            #     self.proj_decoder["audio"] = torch.nn.Linear(args["audio_backbone"].adim, args["audio_backbone"].ddim)
-            # if args["visual_backbone"].adim != args["visual_backbone"].ddim:
-            #     self.proj_decoder["video"] = torch.nn.Linear(args["visual_backbone"].adim, args["visual_backbone"].ddim)
-            # if args["audio_backbone"].mtlalpha < 1 or args["visual_backbone"].mtalpha < 1:
-            #     self.decoder = Decoder(
-            #         odim=odim,
-            #         attention_dim=args["visual_backbone"].ddim,
-            #         attention_heads=args["visual_backbone"].dheads,
-            #         linear_units=args["visual_backbone"].dunits,
-            #         num_blocks=args["visual_backbone"].dlayers,
-            #         dropout_rate=args["visual_backbone"].dropout_rate,
-            #         positional_dropout_rate=args["visual_backbone"].dropout_rate,
-            #         self_attention_dropout_rate=args["visual_backbone"].transformer_attn_dropout_rate,
-            #         src_attention_dropout_rate=args["visual_backbone"].transformer_attn_dropout_rate,
-            #     )
-        #     self.fusion = MLPHead(
-        #     idim=args["audio_backbone"].adim + args["visual_backbone"].adim,
-        #     hdim = args["fusion"].fusion_hdim,
-        #     odim=args["audio_backbone"].adim,
-        #     norm=args["fusion"].fusion_norm,
-        # )
+
             self.criterion = LabelSmoothingLoss(
                 self.odim,
                 self.ignore_id,
@@ -89,12 +57,12 @@ class E2E(torch.nn.Module):
                 args["visual_backbone"].transformer_length_normalized_loss,
             )
             self.mtlalpha = args["visual_backbone"].mtlalpha
-            if args["visual_backbone"].mtlalpha > 0.0:
-                self.ctc = CTC(
-                    odim, self.mambaOut, args["visual_backbone"].dropout_rate, ctc_type=args["visual_backbone"].ctc_type, reduce=True
-                )
-            else:
-                self.ctc = None
+            # if args["visual_backbone"].mtlalpha > 0.0:
+            #     self.ctc = CTC(
+            #         odim, self.odim, args["visual_backbone"].dropout_rate, ctc_type=args["visual_backbone"].ctc_type, reduce=True
+            #     )
+            # else:
+            #     self.ctc = None
                 
         else:
             self.encoder = self.createEncoder(args)
@@ -188,22 +156,16 @@ class E2E(torch.nn.Module):
         if len(audio.size()) == 2:
             audio = audio.unsqueeze(0)
         xAudio = self.audioFrontEnd(audio)
-        if self.projectBefore:
-            xAudio = self.projection(xAudio)
+        xAudio = self.audioEmbed(xAudio)
         xAudio = self.mamba(xAudio)
-        if not self.projectBefore:
-            xAudio = self.projection(xAudio)
         size = vidSize
         #padd xAud to match size of xVid
         xAudio = torch.nn.functional.pad(xAudio, (0, 0, 0, size - xAudio.size(1)), "constant")
         return xAudio
     def getVideoFeatures(self, video, padding_mask=None):
         xVideo = self.videoFrontEnd(video)
-        if self.projectBefore:
-            xVideo = self.projection(xVideo)
+        xVideo = self.videoEmbed(xVideo)
         xVideo = self.mamba(xVideo)
-        if not self.projectBefore:
-            xVideo = self.projection(xVideo)
         # xVideo,_ = self.videoEncoder(video, padding_mask)
         return xVideo
     # def getCombinedFeatures(self, xVideo, xAudio):
@@ -255,7 +217,7 @@ class E2E(torch.nn.Module):
             padding_mask = None
         vidSize = x["video"].size(1)
         # modalities = self.getModalities(x)
-        enc_feat = torch.zeros(x['video'].size(0)*2, x['video'].size(1), self.mambaOut, device=x["video"].device)
+        enc_feat = torch.zeros(x['video'].size(0)*2, x['video'].size(1), self.odim, device=x["video"].device)
         modalities = torch.cat((torch.zeros(x['video'].size(0), dtype=torch.long, device=x["video"].device),
                                 torch.ones(x['video'].size(0), dtype=torch.long, device=x["video"].device)))
 
@@ -282,8 +244,8 @@ class E2E(torch.nn.Module):
         return enc_feat, lengths, padding_mask, label, modalities
     def forward_crossmodal(self, x, lengths, label):
         enc_feat, lengths, padding_mask, label, modalities = self.getAllModalFeatures(x,lengths,label)
-        loss_ctcMod, ys_hat = self.ctc(enc_feat, lengths["video"], label)
-        loss_ctc = loss_ctcMod
+        # loss_ctcMod, ys_hat = self.ctc(enc_feat, lengths["video"], label)
+        # loss_ctc = loss_ctcMod
         
         # decoder loss
         ys_in_pad, ys_out_pad = add_sos_eos(label, self.sos, self.eos, self.ignore_id)
@@ -292,10 +254,10 @@ class E2E(torch.nn.Module):
         #     pred_pad, _ = self.decoder(ys_in_pad, ys_mask, enc_feat, padding_mask["video"])
         # else:
         #     pred_pad = None
-        #cut off the second dimention of the enc_feat tensor to match the length of the ys_out_pad tensor second dimention
-        enc_feat = enc_feat[:,:ys_out_pad.size(1),:].contiguous() # TODO This is probably not the best thing to do. We should make mamba output the same size as the ys_out_pad tensor. 
+        #cut off the second dimention of the enc_feat tensor to match the length of the ys_out_pad tensor second dimention get the last values, not the first
+        enc_feat = enc_feat[:,enc_feat.size(1)-ys_out_pad.size(1):,:].contiguous() # TODO This is probably not the best thing to do. We should make mamba output the same size as the ys_out_pad tensor. 
         loss_att = self.criterion(enc_feat, ys_out_pad)
-        loss = self.mtlalpha * loss_ctc + (1 - self.mtlalpha) * loss_att
+        loss = loss_att
 
         accAll = th_accuracy(
             enc_feat.view(-1, self.odim), ys_out_pad, ignore_label=self.ignore_id
@@ -307,4 +269,4 @@ class E2E(torch.nn.Module):
         acc["audio"] = th_accuracy(
             enc_feat[modalities==1].view(-1, self.odim), ys_out_pad[modalities==1], ignore_label=self.ignore_id
         )
-        return loss, loss_ctc, loss_att, accAll, acc
+        return loss, loss, loss_att, accAll, acc

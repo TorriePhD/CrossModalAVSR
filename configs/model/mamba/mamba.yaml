@@ -1,4 +1,1 @@
-d_state: 4
-d_conv: 2
-expand: 1
-projectBefore: True
+n_layer: 72
