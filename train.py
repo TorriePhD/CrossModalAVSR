@@ -49,7 +49,7 @@ def main(cfg):
         **cfg.trainer,
         logger=logger,
         callbacks=callbacks,
-        strategy=DDPPlugin(find_unused_parameters=False)
+        strategy=DDPPlugin()
     )
 
     trainer.fit(model=modelmodule, datamodule=datamodule)
