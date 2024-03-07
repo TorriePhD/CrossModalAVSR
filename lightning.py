@@ -93,7 +93,7 @@ class ModelModule(LightningModule):
                 if self.cfg.data.modality == "video":
                     new_state_dict = {}
                     for k, v in ckpt.items():
-                        if "audioEcoder" in k or "audioEncoder" in k or "fusion" in k:
+                        if "audioEcoder" in k or "audioFrontEnd" in k or "fusion" in k:
                             continue
                         
                         if "videoEncoder" in k:
@@ -102,7 +102,7 @@ class ModelModule(LightningModule):
                     self.model.load_state_dict(new_state_dict, strict=True)                    
                 elif self.cfg.data.modality == "audiovisual":
                     #check if any start with audioEncoder. is in the ckpt
-                    if len([k for k, v in ckpt.items() if k.startswith("audioEncoder.")]) > 0:
+                    if len([k for k, v in ckpt.items() if k.startswith("audioFrontEnd.")]) > 0:
                         self.model.load_state_dict(ckpt, strict=True)
                     else:
                         #load video encoder remove encoder. prefix
