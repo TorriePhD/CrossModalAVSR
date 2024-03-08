@@ -13,6 +13,7 @@ from datamodule.data_module import DataModule
 def main(cfg):
     # Set modules and trainer
     from lightning import ModelModule
+    print(f"evaluating model: {cfg.pretrained_model_path}")
     modelmodule = ModelModule(cfg)
     datamodule = DataModule(cfg)
     trainer = Trainer(num_nodes=1, gpus=1)
