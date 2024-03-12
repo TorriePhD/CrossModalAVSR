@@ -237,6 +237,9 @@ for data_filename in tqdm(filenames):
         landmarks_filename = (
             data_filename.replace(args.data_dir, args.landmarks_dir)[:-4] + ".pkl"
         )
+        if not os.path.exists(landmarks_filename):
+            #remove "mvlrs_v1" from the path
+            landmarks_filename = landmarks_filename.replace("mvlrs_v1/", "")
         landmarks = pickle.load(open(landmarks_filename, "rb"))
     else:
         landmarks = None
