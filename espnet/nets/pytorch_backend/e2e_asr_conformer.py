@@ -6,6 +6,7 @@
 import logging
 import numpy
 import torch
+import torch.nn.functional as F
 
 from espnet.nets.pytorch_backend.ctc import CTC
 from espnet.nets.pytorch_backend.nets_utils import (
@@ -104,6 +105,7 @@ class E2E(torch.nn.Module):
                 args["visual_backbone"].lsm_weight,
                 args["visual_backbone"].transformer_length_normalized_loss,
             )
+            self.mse = torch.nn.MSELoss()
             self.adim = args["visual_backbone"].adim
             self.mtlalpha = args["visual_backbone"].mtlalpha
             if args["visual_backbone"].mtlalpha > 0.0:
@@ -314,6 +316,24 @@ class E2E(torch.nn.Module):
         modality[whereAudio] = 1
         modality[whereVideo & whereAudio] = 2
         return modality
+    
+    def cosine_similarity_matrix(self,a, b):
+        a_norm = a / a.norm(dim=1)[:, None]
+        b_norm = b / b.norm(dim=1)[:, None]
+        return torch.mm(a_norm, b_norm.transpose(0, 1))
+    def self_attention_reconstruction(self,encoder_outputs):
+        #TODO fix CAR loss
+        return encoder_outputs
+    
+    def cross_attentive_regularization_loss(self,speech_encoder_outputs, text_encoder_outputs, temperature=0.05):
+        sim_matrix = self.cosine_similarity_matrix(speech_encoder_outputs, text_encoder_outputs)
+        sim_matrix = F.softmax(sim_matrix / temperature, dim=-1)
+        reconstructed_from_speech = torch.mm(sim_matrix, text_encoder_outputs)
+        reconstructed_from_text = self.self_attention_reconstruction(text_encoder_outputs)
+        car_loss = F.mse_loss(reconstructed_from_speech, reconstructed_from_text)
+        return car_loss
+    def mseLoss(self, video,audio):
+        return self.mse(video, audio.detach())
     def getAllModalFeatures(self,x,lengths=None,label=None):
         if lengths is not None:
             padding_mask = {}
@@ -340,6 +360,9 @@ class E2E(torch.nn.Module):
                 video = x["video"].clone()
                 audio = None
             enc_feat[indexes] = self.getSingleModalFeatures(video, audio, modality, padding_mask, vidSize, )
+        # calculate contrastive loss between audio and video
+        # contrastiveLoss = self.contrastiveLoss(enc_feat[modalities==0], enc_feat[modalities==1])
+        mseLoss = self.mseLoss(enc_feat[modalities==0], enc_feat[modalities==1])
         # ctc loss
         #repeat label 3 times
         if label is not None:
@@ -350,9 +373,9 @@ class E2E(torch.nn.Module):
             padding_mask["video"] = torch.cat((padding_mask["video"], padding_mask["video"]), dim=0)
             padding_mask["audio"] = torch.cat((padding_mask["audio"], padding_mask["audio"]), dim=0)
 
-        return enc_feat, lengths, padding_mask, label, modalities
+        return enc_feat, lengths, padding_mask, label, modalities, mseLoss
     def forward_crossmodal(self, x, lengths, label):
-        enc_feat, lengths, padding_mask, label, modalities = self.getAllModalFeatures(x,lengths,label)
+        enc_feat, lengths, padding_mask, label, modalities, contrastiveLoss = self.getAllModalFeatures(x,lengths,label)
         loss_ctcMod, ys_hat = self.ctc(enc_feat, lengths["video"], label)
         loss_ctc = loss_ctcMod
         
@@ -364,7 +387,7 @@ class E2E(torch.nn.Module):
         else:
             pred_pad = None
         loss_att = self.criterion(pred_pad, ys_out_pad)
-        loss = self.mtlalpha * loss_ctc + (1 - self.mtlalpha) * loss_att
+        loss = self.mtlalpha * loss_ctc + (1 - self.mtlalpha) * loss_att + contrastiveLoss*self.mtlalpha
 
         accAll = th_accuracy(
             pred_pad.view(-1, self.odim), ys_out_pad, ignore_label=self.ignore_id
@@ -376,4 +399,4 @@ class E2E(torch.nn.Module):
         acc["audio"] = th_accuracy(
             pred_pad[modalities==1].view(-1, self.odim), ys_out_pad[modalities==1], ignore_label=self.ignore_id
         )
-        return loss, loss_ctc, loss_att, accAll, acc
+        return loss, loss_ctc, loss_att, contrastiveLoss, accAll, acc

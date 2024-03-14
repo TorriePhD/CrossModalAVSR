@@ -178,7 +178,7 @@ class ModelModule(LightningModule):
 
     def _step(self, batch, batch_idx, step_type):
         if self.cfg.data.modality == "audiovisual":
-            loss, loss_ctc, loss_att, acc, accs = self.model(batch["inputs"], batch["input_lengths"], batch["targets"])
+            loss, loss_ctc, loss_att, contrastiveLoss, acc, accs = self.model(batch["inputs"], batch["input_lengths"], batch["targets"])
         else:
             loss, loss_ctc, loss_att, acc = self.model(batch["inputs"], batch["input_lengths"], batch["targets"])
         batch_size = len(batch["inputs"])
@@ -191,6 +191,7 @@ class ModelModule(LightningModule):
             if self.cfg.data.modality == "audiovisual":
                 self.log("audio_acc", accs["audio"], on_step=False, on_epoch=True, batch_size=batch_size)
                 self.log("vid_acc", accs["video"], on_step=False, on_epoch=True, batch_size=batch_size)
+                self.log("contrastiveLoss", contrastiveLoss, on_step=False, on_epoch=True, batch_size=batch_size)
             elif self.cfg.data.modality == "audio":
                 self.log("audio_acc", acc, on_step=False, on_epoch=True, batch_size=batch_size)
             elif self.cfg.data.modality == "video":
@@ -203,6 +204,7 @@ class ModelModule(LightningModule):
             if self.cfg.data.modality == "audiovisual":
                 self.log("audio_acc_val", accs["audio"], batch_size=batch_size)
                 self.log("vid_acc_val", accs["video"], batch_size=batch_size)
+                self.log("contrastiveLoss_val", contrastiveLoss, batch_size=batch_size)
             elif self.cfg.data.modality == "audio":
                 self.log("audio_acc_val", acc, batch_size=batch_size)
             elif self.cfg.data.modality == "video":
