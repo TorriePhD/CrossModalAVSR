@@ -9,6 +9,9 @@ import ffmpeg
 from data.data_module import AVSRDataLoader
 from tqdm import tqdm
 from utils import save_vid_aud
+from pathlib import Path
+from time import sleep
+import fcntl
 
 warnings.filterwarnings("ignore")
 
@@ -80,15 +83,76 @@ parser.add_argument(
     help="Index to identify separate jobs (useful for parallel processing)",
 )
 args = parser.parse_args()
+def atomic_touch(file_path):
+    with open(file_path, 'a') as f:
+        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
 
+def extract_archive(datasetPath, datasetDescription):
+    datasetPath = Path(datasetPath)
+    savePath = Path("/tmp/") / datasetDescription
+    savePath.mkdir(parents=True, exist_ok=True)
+    workingFile = savePath / f"{datasetPath.stem}working.txt"
+    doneFile = savePath / f"{datasetPath.stem}done.txt"
 
+    try:
+        atomic_touch(workingFile)
+        if not doneFile.exists():
+            print("Extracting dataset...")
+
+            if datasetPath.is_file() and datasetPath.suffix in [".zip", ".tar"]:
+                if datasetPath.suffix == ".zip":
+                    import zipfile
+                    print(datasetPath.exists())
+                    with zipfile.ZipFile(datasetPath, "r") as zip_ref:
+                        print("extracting zip")
+                        print(savePath)
+                        zip_ref.extractall(savePath)
+                elif datasetPath.suffix == ".tar":
+                    import tarfile
+                    with tarfile.open(datasetPath, "r") as tar_ref:
+                        print("extracting tar")
+                        tar_ref.extractall(savePath)
+
+                doneFile.touch()
+                print("Dataset extracted.")
+            else:
+                print("doesn't exist")
+                raise FileNotFoundError(f"No archive found at {datasetPath}")
+        else:
+            print("Dataset already extracted.")
+    except FileNotFoundError:
+        print("Waiting for dataset extraction...")
+        while not doneFile.exists():
+            sleep(10)
+        print("Dataset extracted.")
+    finally:
+        if workingFile.exists():
+            try:
+                workingFile.unlink()
+            except:
+                pass
+
+    return savePath
+
+zipPath = Path("/home/st392/fsl_groups/grp_lip/compute/datasets/VoxCeleb2/vox2_aac.zip")
+extractedPath = extract_archive(zipPath, "vox2")
+args.aud_dir = extractedPath
+vidPath = Path("/home/st392/fsl_groups/grp_lip/compute/datasets/VoxCeleb2/vox2_mp4.zip")
+extractedVidPath = extract_archive(vidPath, "vox2")
+args.vid_dir = extractedVidPath
+landmarkPath = Path("/home/st392/fsl_groups/grp_lip/compute/datasets/VoxCeleb2/single.zip")
+extractedLandmarkPath = extract_archive(landmarkPath, "vox2")
+args.landmarks_dir = extractedLandmarkPath
 # Constants
 seg_vid_len = args.seg_duration * 25
 seg_aud_len = args.seg_duration * 16000
 dst_vid_dir = os.path.join(
     args.root_dir, args.dataset, f"{args.dataset}_video_seg{args.seg_duration}s"
 )
-
+tarFile = Path(dst_vid_dir)/f"{args.dataset}_video_seg{args.seg_duration}s{args.job_index}.tar"
+if tarFile.exists():
+    print(f"Tar file {tarFile} already exists.")
+    exit(0)
 # Load data
 vid_dataloader = AVSRDataLoader(
     modality="video", detector=args.detector, convert_gray=False
@@ -171,3 +235,10 @@ for vid_filename in tqdm(files_to_process):
             os.remove(dst_aud_filename)
             os.remove(dst_vid_filename)
             shutil.move(dst_vid_filename[:-4] + ".m.mp4", dst_vid_filename)
+        else:
+            command = f"tar -rf {tarFile} {dst_vid_filename} {dst_aud_filename}"
+            os.system(command)
+            Path(dst_vid_filename).unlink()
+            Path(dst_aud_filename).unlink()
+if len(list(Path(dst_vid_dir).rglob("*.mp4")))==0 and len(list(Path(dst_vid_dir).rglob("*.wav")))==0:
+    shutil.rmtree(dst_vid_dir)
