@@ -1,11 +1,12 @@
 import os
 
 import torch
+from tqdm import tqdm
 
 
 def average_checkpoints(last):
     avg = None
-    for path in last:
+    for path in tqdm(last):
         states = torch.load(path, map_location=lambda storage, loc: storage)[
             "state_dict"
         ]
@@ -16,7 +17,7 @@ def average_checkpoints(last):
             for k in avg.keys():
                 avg[k] += states[k]
     # average
-    for k in avg.keys():
+    for k in tqdm(avg.keys()):
         if avg[k] is not None:
             if avg[k].is_floating_point():
                 avg[k] /= len(last)

@@ -146,7 +146,7 @@ class ModelModule(LightningModule):
             sample["input"]["audio"] = sample["input"]["audio"].unsqueeze(0)
             sample["input"]["video"] = sample["input"]["video"].unsqueeze(0)
             enc_feat, _, _, _, modalities = self.model.getAllModalFeatures(sample["input"])
-            modalityOptions = ["video","audio"]
+            modalityOptions = ["video","audio","audiovisual"]
             self.beam_search = get_beam_search_decoder(self.model, self.token_list)
             token_id = sample["target"]
             actual = self.text_transform.post_process(token_id)
@@ -191,6 +191,7 @@ class ModelModule(LightningModule):
             if self.cfg.data.modality == "audiovisual":
                 self.log("audio_acc", accs["audio"], on_step=False, on_epoch=True, batch_size=batch_size)
                 self.log("vid_acc", accs["video"], on_step=False, on_epoch=True, batch_size=batch_size)
+                self.log("audiovisual_acc", accs["audiovisual"], on_step=False, on_epoch=True, batch_size=batch_size)
             elif self.cfg.data.modality == "audio":
                 self.log("audio_acc", acc, on_step=False, on_epoch=True, batch_size=batch_size)
             elif self.cfg.data.modality == "video":
@@ -203,6 +204,7 @@ class ModelModule(LightningModule):
             if self.cfg.data.modality == "audiovisual":
                 self.log("audio_acc_val", accs["audio"], batch_size=batch_size)
                 self.log("vid_acc_val", accs["video"], batch_size=batch_size)
+                self.log("audiovisual_acc_val", accs["audiovisual"], batch_size=batch_size)
             elif self.cfg.data.modality == "audio":
                 self.log("audio_acc_val", acc, batch_size=batch_size)
             elif self.cfg.data.modality == "video":
@@ -222,8 +224,8 @@ class ModelModule(LightningModule):
 
     def on_test_epoch_start(self):
         if self.cfg.data.modality == "audiovisual":
-            self.total_edit_distance = {"audio": 0, "video": 0}
-            self.total_length = {"audio": 0, "video": 0}
+            self.total_edit_distance = {"audio": 0, "video": 0,"audiovisual":0}
+            self.total_length = {"audio": 0, "video": 0,"audiovisual":0}
         else:
             self.total_edit_distance = 0
             self.total_length = 0

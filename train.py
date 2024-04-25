@@ -54,6 +54,10 @@ def main(cfg):
 
     trainer.fit(model=modelmodule, datamodule=datamodule)
     ensemble(cfg)
+    # #load ensemble
+    state_dict = torch.load(os.path.join(cfg.exp_dir, cfg.exp_name, "model_avg_10.pth"), map_location=lambda storage, loc: storage)
+    modelmodule.model.load_state_dict(state_dict)
+    trainer.test(model=modelmodule, datamodule=datamodule)
 
 
 if __name__ == "__main__":

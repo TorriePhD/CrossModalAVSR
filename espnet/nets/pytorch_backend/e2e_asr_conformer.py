@@ -92,12 +92,12 @@ class E2E(torch.nn.Module):
                     self_attention_dropout_rate=args["visual_backbone"].transformer_attn_dropout_rate,
                     src_attention_dropout_rate=args["visual_backbone"].transformer_attn_dropout_rate,
                 )
-        #     self.fusion = MLPHead(
-        #     idim=args["audio_backbone"].adim + args["visual_backbone"].adim,
-        #     hdim = args["fusion"].fusion_hdim,
-        #     odim=args["audio_backbone"].adim,
-        #     norm=args["fusion"].fusion_norm,
-        # )
+            self.fusion = MLPHead(
+                idim=args["audio_backbone"].adim + args["visual_backbone"].adim,
+                hdim = args["fusion"].fusion_hdim,
+                odim=args["audio_backbone"].adim,
+                norm=args["fusion"].fusion_norm,
+            )
             self.criterion = LabelSmoothingLoss(
                 self.odim,
                 self.ignore_id,
@@ -277,10 +277,10 @@ class E2E(torch.nn.Module):
             xVideo = xVideo[0]
         xVideo = self.videoAfterNorm(xVideo)
         return xVideo
-    # def getCombinedFeatures(self, xVideo, xAudio):
-    #     x_combined = torch.cat((xVideo, xAudio), dim=2)
-    #     x_combined = self.fusion(x_combined)
-    #     return x_combined
+    def getCombinedFeatures(self, xVideo, xAudio):
+        x_combined = torch.cat((xVideo, xAudio), dim=2)
+        x_combined = self.fusion(x_combined)
+        return x_combined
     def getSingleModalFeatures(self, video, audio, modality, padding_mask,vidSize=None,):
         if modality == "video":
             myPaddingMask = None
@@ -295,15 +295,15 @@ class E2E(torch.nn.Module):
 
             xAud = self.getAudioFeatures(audio, vidSize, myPaddingMask)
             return xAud
-        # else:
-        #     if padding_mask is None:
-        #         padding_mask = {}
-        #         padding_mask["video"] = None
-        #         padding_mask["audio"] = None
-        #     xVid = self.getVideoFeatures(video, padding_mask["video"])
-        #     xAud = self.getAudioFeatures(audio, video.size(1), padding_mask["audio"])
-        #     x_combined = self.getCombinedFeatures(xVid, xAud)
-        #     return x_combined
+        else:
+            if padding_mask is None:
+                padding_mask = {}
+                padding_mask["video"] = None
+                padding_mask["audio"] = None
+            xVid = self.getVideoFeatures(video, padding_mask["video"])
+            xAud = self.getAudioFeatures(audio, video.size(1), padding_mask["audio"])
+            x_combined = self.getCombinedFeatures(xVid, xAud)
+            return x_combined
     def getModalities(self, x):
         modality = torch.zeros(x['video'].size(0), dtype=torch.long, device=x["video"].device)
         # Determine modality by where video and audio are present (all zeros if not present)
@@ -326,29 +326,34 @@ class E2E(torch.nn.Module):
             padding_mask = None
         vidSize = x["video"].size(1)
         # modalities = self.getModalities(x)
-        enc_feat = torch.zeros(x['video'].size(0)*2, x['video'].size(1), self.adim, device=x["video"].device)
+        enc_feat = torch.zeros(x['video'].size(0)*3, x['video'].size(1), self.adim, device=x["video"].device)
         modalities = torch.cat((torch.zeros(x['video'].size(0), dtype=torch.long, device=x["video"].device),
-                                torch.ones(x['video'].size(0), dtype=torch.long, device=x["video"].device)))
+                                torch.ones(x['video'].size(0), dtype=torch.long, device=x["video"].device),
+                                torch.ones(x['video'].size(0), dtype=torch.long, device=x["video"].device)+1))
 
-        for modality in ["audio", "video"]:
+        for modality in ["audio", "video","audiovisual"]:
             if modality == "audio":
                 indexes = modalities == 1
                 video = None
                 audio = x["audio"].clone()
-            else:
+            elif modality == "video":
                 indexes = modalities == 0
                 video = x["video"].clone()
                 audio = None
+            else:
+                indexes = modalities == 2
+                video = x["video"].clone()
+                audio = x["audio"].clone()
             enc_feat[indexes] = self.getSingleModalFeatures(video, audio, modality, padding_mask, vidSize, )
         # ctc loss
         #repeat label 3 times
         if label is not None:
-            label = torch.cat((label, label), dim=0)
+            label = torch.cat((label, label,label), dim=0)
         if lengths is not None:
-            lengths["video"] = torch.cat((lengths["video"], lengths["video"]), dim=0)
-            lengths["audio"] = torch.cat((lengths["audio"], lengths["audio"]), dim=0)
-            padding_mask["video"] = torch.cat((padding_mask["video"], padding_mask["video"]), dim=0)
-            padding_mask["audio"] = torch.cat((padding_mask["audio"], padding_mask["audio"]), dim=0)
+            lengths["video"] = torch.cat((lengths["video"], lengths["video"],lengths["video"]), dim=0)
+            lengths["audio"] = torch.cat((lengths["audio"], lengths["audio"],lengths["video"]), dim=0)
+            padding_mask["video"] = torch.cat((padding_mask["video"], padding_mask["video"],padding_mask["video"]), dim=0)
+            padding_mask["audio"] = torch.cat((padding_mask["audio"], padding_mask["audio"],padding_mask["audio"]), dim=0)
 
         return enc_feat, lengths, padding_mask, label, modalities
     def forward_crossmodal(self, x, lengths, label):
@@ -375,5 +380,8 @@ class E2E(torch.nn.Module):
         )
         acc["audio"] = th_accuracy(
             pred_pad[modalities==1].view(-1, self.odim), ys_out_pad[modalities==1], ignore_label=self.ignore_id
+        )
+        acc["audiovisual"] = th_accuracy(  
+            pred_pad[modalities==2].view(-1, self.odim), ys_out_pad[modalities==2], ignore_label=self.ignore_id
         )
         return loss, loss_ctc, loss_att, accAll, acc
