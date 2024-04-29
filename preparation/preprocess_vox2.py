@@ -97,6 +97,7 @@ def extract_archive(datasetPath, datasetDescription):
     try:
         atomic_touch(workingFile)
         if not doneFile.exists():
+            #if 
             print("Extracting dataset...")
 
             if datasetPath.is_file() and datasetPath.suffix in [".zip", ".tar"]:
@@ -120,7 +121,8 @@ def extract_archive(datasetPath, datasetDescription):
                 raise FileNotFoundError(f"No archive found at {datasetPath}")
         else:
             print("Dataset already extracted.")
-    except FileNotFoundError:
+    # except the FileNotFoundError and BlockingIOError 
+    except (FileNotFoundError, BlockingIOError):
         print("Waiting for dataset extraction...")
         while not doneFile.exists():
             sleep(10)
@@ -133,16 +135,16 @@ def extract_archive(datasetPath, datasetDescription):
                 pass
 
     return savePath
-
-zipPath = Path("/home/st392/fsl_groups/grp_lip/compute/datasets/VoxCeleb2/vox2_aac.zip")
-extractedPath = extract_archive(zipPath, "vox2")
-args.aud_dir = extractedPath
-vidPath = Path("/home/st392/fsl_groups/grp_lip/compute/datasets/VoxCeleb2/vox2_mp4.zip")
-extractedVidPath = extract_archive(vidPath, "vox2")
-args.vid_dir = extractedVidPath
 landmarkPath = Path("/home/st392/fsl_groups/grp_lip/compute/datasets/VoxCeleb2/single.zip")
 extractedLandmarkPath = extract_archive(landmarkPath, "vox2")
-args.landmarks_dir = extractedLandmarkPath
+zipPath = Path("/home/st392/fsl_groups/grp_lip/compute/datasets/VoxCeleb2/vox2_aacFixed.zip")
+extractedPath = extract_archive(zipPath, "vox2")
+args.aud_dir = str(extractedPath)
+vidPath = Path("/home/st392/fsl_groups/grp_lip/compute/datasets/VoxCeleb2/vox2_mp4Fixed.zip")
+extractedVidPath = extract_archive(vidPath, "vox2")
+args.vid_dir = str(extractedVidPath)
+
+args.landmarks_dir = str(extractedLandmarkPath)
 # Constants
 seg_vid_len = args.seg_duration * 25
 seg_aud_len = args.seg_duration * 16000

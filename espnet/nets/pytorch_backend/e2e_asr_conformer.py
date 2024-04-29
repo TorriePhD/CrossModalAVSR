@@ -331,7 +331,7 @@ class E2E(torch.nn.Module):
                                 torch.ones(x['video'].size(0), dtype=torch.long, device=x["video"].device),
                                 torch.ones(x['video'].size(0), dtype=torch.long, device=x["video"].device)+1))
 
-        for modality in ["audio", "video","audiovisual"]:
+        for modality in ["audio", "video"]:
             if modality == "audio":
                 indexes = modalities == 1
                 video = None
@@ -340,11 +340,11 @@ class E2E(torch.nn.Module):
                 indexes = modalities == 0
                 video = x["video"].clone()
                 audio = None
-            else:
-                indexes = modalities == 2
-                video = x["video"].clone()
-                audio = x["audio"].clone()
             enc_feat[indexes] = self.getSingleModalFeatures(video, audio, modality, padding_mask, vidSize, )
+        videoFeat = enc_feat[modalities==0].clone()
+        audioFeat = enc_feat[modalities==1].clone()
+        indexes = modalities == 2
+        enc_feat[indexes] = self.getCombinedFeatures(videoFeat, audioFeat)
         # ctc loss
         #repeat label 3 times
         if label is not None:
