@@ -9,7 +9,7 @@ import torchvision
 import whisper
 from tqdm import tqdm
 from transforms import TextTransform
-
+from pathlib import Path
 parser = argparse.ArgumentParser(description="Transcribe into text from media")
 parser.add_argument(
     "--root-dir",
@@ -50,12 +50,12 @@ dst_vid_dir = os.path.join(
 )
 
 text_transform = TextTransform()
-
+tarFileName = Path(args.root_dir) / args.dataset /f"{args.dataset}_video_seg{args.seg_duration}s"/ f"{args.dataset}_video_seg{args.seg_duration}s{args.job_index}.tar"
+os.makedirs(f"/tmp/{args.job_index}", exist_ok=True)
+os.system(f"tar -xf {tarFileName} -C /tmp/{args.job_index} --keep-old-files")
+transcriptTarFile = Path(args.root_dir) /args.dataset/ f"{args.dataset}_train_transcript_lengths_seg{args.seg_duration}.{args.groups}.{args.job_index}.tar"
 # Load video files
-all_files = sorted(glob.glob(os.path.join(dst_vid_dir, "**", "*.wav"), recursive=True))
-unit = math.ceil(len(all_files) / args.groups)
-files_to_process = all_files[args.job_index * unit : (args.job_index + 1) * unit]
-
+files_to_process = sorted(glob.glob(f"/tmp/{args.job_index}/**/*.wav", recursive=True))
 # Label filename
 label_filename = os.path.join(
     args.root_dir,
@@ -64,13 +64,14 @@ label_filename = os.path.join(
     if args.groups <= 1
     else f"{args.dataset}_train_transcript_lengths_seg{args.seg_duration}s.{args.groups}.{args.job_index}.csv",
 )
+
 os.makedirs(os.path.dirname(label_filename), exist_ok=True)
 print(f"Directory {os.path.dirname(label_filename)} created")
 
 f = open(label_filename, "w")
 
 # Load ASR model
-model = whisper.load_model("medium.en", device="cuda")
+model = whisper.load_model("large-v3", device="cuda")
 
 # Transcription
 for filename in tqdm(files_to_process):
@@ -93,12 +94,14 @@ for filename in tqdm(files_to_process):
     if transcript:
         with open(dst_filename, "w") as k:
             k.write(f"{transcript}")
-
+        command = f"tar -rf {transcriptTarFile} {dst_filename}"
+        os.system(command)
+        Path(dst_filename).unlink()
         trim_vid_data = torchvision.io.read_video(
             filename[:-4] + ".mp4", pts_unit="sec"
         )[0]
         basename = os.path.relpath(
-            filename, start=os.path.join(args.root_dir, args.dataset)
+            filename, start=os.path.join(f"/tmp/{args.job_index}", args.dataset)
             )[:-4]+".mp4"
         token_id_str = " ".join(
             map(str, [_.item() for _ in text_transform.tokenize(transcript)])

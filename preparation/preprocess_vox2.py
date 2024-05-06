@@ -91,60 +91,36 @@ def extract_archive(datasetPath, datasetDescription):
     datasetPath = Path(datasetPath)
     savePath = Path("/tmp/") / datasetDescription
     savePath.mkdir(parents=True, exist_ok=True)
-    workingFile = savePath / f"{datasetPath.stem}working.txt"
-    doneFile = savePath / f"{datasetPath.stem}done.txt"
 
-    try:
-        atomic_touch(workingFile)
-        if not doneFile.exists():
-            #if 
-            print("Extracting dataset...")
+    print("Extracting dataset...")
 
-            if datasetPath.is_file() and datasetPath.suffix in [".zip", ".tar"]:
-                if datasetPath.suffix == ".zip":
-                    import zipfile
-                    print(datasetPath.exists())
-                    with zipfile.ZipFile(datasetPath, "r") as zip_ref:
-                        print("extracting zip")
-                        print(savePath)
-                        zip_ref.extractall(savePath)
-                elif datasetPath.suffix == ".tar":
-                    import tarfile
-                    with tarfile.open(datasetPath, "r") as tar_ref:
-                        print("extracting tar")
-                        tar_ref.extractall(savePath)
+    if datasetPath.is_file() and datasetPath.suffix in [".zip", ".tar"]:
+        if datasetPath.suffix == ".zip":
+            cmd = f"unzip -o {datasetPath} -d {savePath}"
+            os.system(cmd)
+        elif datasetPath.suffix == ".tar":
+            import tarfile
+            with tarfile.open(datasetPath, "r") as tar_ref:
+                print("extracting tar")
+                tar_ref.extractall(savePath)
 
-                doneFile.touch()
-                print("Dataset extracted.")
-            else:
-                print("doesn't exist")
-                raise FileNotFoundError(f"No archive found at {datasetPath}")
-        else:
-            print("Dataset already extracted.")
-    # except the FileNotFoundError and BlockingIOError 
-    except (FileNotFoundError, BlockingIOError):
-        print("Waiting for dataset extraction...")
-        while not doneFile.exists():
-            sleep(10)
         print("Dataset extracted.")
-    finally:
-        if workingFile.exists():
-            try:
-                workingFile.unlink()
-            except:
-                pass
+    else:
+        print("doesn't exist")
+        raise FileNotFoundError(f"No archive found at {datasetPath}")
 
     return savePath
 landmarkPath = Path("/home/st392/fsl_groups/grp_lip/compute/datasets/VoxCeleb2/single.zip")
 extractedLandmarkPath = extract_archive(landmarkPath, "vox2")
-zipPath = Path("/home/st392/fsl_groups/grp_lip/compute/datasets/VoxCeleb2/vox2_aacFixed.zip")
-extractedPath = extract_archive(zipPath, "vox2")
-args.aud_dir = str(extractedPath)
+
+# zipPath = Path("/home/st392/fsl_groups/grp_lip/compute/datasets/VoxCeleb2/vox2_aacFixed.zip")
+# extractedPath = extract_archive(zipPath, "vox2_audio")
 vidPath = Path("/home/st392/fsl_groups/grp_lip/compute/datasets/VoxCeleb2/vox2_mp4Fixed.zip")
 extractedVidPath = extract_archive(vidPath, "vox2")
-args.vid_dir = str(extractedVidPath)
+args.vid_dir = str(extractedVidPath/"tmp")
+args.aud_dir = args.vid_dir 
 
-args.landmarks_dir = str(extractedLandmarkPath)
+args.landmarks_dir = str(extractedLandmarkPath/"vox2_landmarks")
 # Constants
 seg_vid_len = args.seg_duration * 25
 seg_aud_len = args.seg_duration * 16000
@@ -175,13 +151,14 @@ for vid_filename in tqdm(files_to_process):
         landmarks_filename = (
             vid_filename.replace(args.vid_dir, args.landmarks_dir)[:-4] + ".pkl"
         )
+        #remove /mp4/ from the path
+        landmarks_filename = landmarks_filename.replace("/mp4/", "/")
         landmarks = pickle.load(open(landmarks_filename, "rb"))
     else:
         landmarks = None
     try:
         video_data = vid_dataloader.load_data(vid_filename, landmarks)
-        aud_filename = vid_filename.replace(args.vid_dir, args.aud_dir)[:-4] + ".wav"
-        audio_data = aud_dataloader.load_data(aud_filename)
+        audio_data = aud_dataloader.load_data(vid_filename)
     except (UnboundLocalError, TypeError, OverflowError, AssertionError):
         continue
     if video_data is None:
@@ -192,9 +169,7 @@ for vid_filename in tqdm(files_to_process):
         dst_vid_filename = (
             f"{vid_filename.replace(args.vid_dir, dst_vid_dir)[:-4]}_{i:02d}.mp4"
         )
-        dst_aud_filename = (
-            f"{aud_filename.replace(args.aud_dir, dst_vid_dir)[:-4]}_{i:02d}.wav"
-        )
+        dst_aud_filename = dst_vid_filename.replace(".mp4", ".wav")
         trim_video_data = video_data[start_idx : start_idx + seg_vid_len]
         trim_audio_data = audio_data[
             :, start_idx * 640 : (start_idx + seg_vid_len) * 640
