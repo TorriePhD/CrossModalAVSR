@@ -113,10 +113,12 @@ def extract_archive(datasetPath, datasetDescription):
 landmarkPath = Path("/home/st392/fsl_groups/grp_lip/compute/datasets/VoxCeleb2/single.zip")
 extractedLandmarkPath = extract_archive(landmarkPath, "vox2")
 
-# zipPath = Path("/home/st392/fsl_groups/grp_lip/compute/datasets/VoxCeleb2/vox2_aacFixed.zip")
-# extractedPath = extract_archive(zipPath, "vox2_audio")
+zipPath = Path("/home/st392/fsl_groups/grp_lip/compute/datasets/VoxCeleb2/vox2_aacFixed.zip")
+extractedPath = extract_archive(zipPath, "vox2_audio")
 vidPath = Path("/home/st392/fsl_groups/grp_lip/compute/datasets/VoxCeleb2/vox2_mp4Fixed.zip")
 extractedVidPath = extract_archive(vidPath, "vox2")
+vidPath = Path("/home/st392/fsl_groups/grp_lip/compute/datasets/VoxCeleb2/vox2_test_mp4.zip")
+extractedVidPath2 = extract_archive(vidPath, "vox2/tmp/test")
 args.vid_dir = str(extractedVidPath/"tmp")
 args.aud_dir = args.vid_dir 
 
@@ -129,8 +131,9 @@ dst_vid_dir = os.path.join(
 )
 tarFile = Path(dst_vid_dir)/f"{args.dataset}_video_seg{args.seg_duration}s{args.job_index}.tar"
 if tarFile.exists():
-    print(f"Tar file {tarFile} already exists.")
-    exit(0)
+    # print(f"Tar file {tarFile} already exists.")
+    # exit(0)
+    tarFile.unlink()
 # Load data
 vid_dataloader = AVSRDataLoader(
     modality="video", detector=args.detector, convert_gray=False
@@ -145,7 +148,7 @@ filenames = [
 
 unit = math.ceil(len(filenames) / args.groups)
 files_to_process = filenames[args.job_index * unit : (args.job_index + 1) * unit]
-
+failed = 0 
 for vid_filename in tqdm(files_to_process):
     if args.landmarks_dir:
         landmarks_filename = (
@@ -159,9 +162,13 @@ for vid_filename in tqdm(files_to_process):
     try:
         video_data = vid_dataloader.load_data(vid_filename, landmarks)
         audio_data = aud_dataloader.load_data(vid_filename)
-    except (UnboundLocalError, TypeError, OverflowError, AssertionError):
+        #catch system error too
+    except (UnboundLocalError, TypeError, OverflowError, AssertionError, SystemError, RuntimeError):
+        print(f"Error in loading {vid_filename} file")
+        failed += 1
         continue
     if video_data is None:
+        failed += 1
         continue
 
     # Process segments
@@ -217,5 +224,5 @@ for vid_filename in tqdm(files_to_process):
             os.system(command)
             Path(dst_vid_filename).unlink()
             Path(dst_aud_filename).unlink()
-if len(list(Path(dst_vid_dir).rglob("*.mp4")))==0 and len(list(Path(dst_vid_dir).rglob("*.wav")))==0:
-    shutil.rmtree(dst_vid_dir)
+            
+print(f"Failed: {failed} out of {len(files_to_process)}")  

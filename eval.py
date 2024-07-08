@@ -14,6 +14,7 @@ def main(cfg):
     # Set modules and trainer
     from lightning import ModelModule
     print(f"evaluating model: {cfg.pretrained_model_path}")
+    print(f"signal to noise ratio: {cfg.decode.snr_target}")
     modelmodule = ModelModule(cfg)
     datamodule = DataModule(cfg)
     trainer = Trainer(num_nodes=1, gpus=1)

@@ -34,6 +34,20 @@ class ModelModule(LightningModule):
         self.model = E2E(len(self.token_list), self.backbone_args)
 
         # -- initialise
+        self.LMtokenizer = None
+        self.LMmodel = None
+        self.LMprompt = None
+        if self.cfg.pretrained_LM_path:
+            from transformers import AutoTokenizer, T5ForConditionalGeneration, Trainer, TrainingArguments
+            self.LMtokenizer = AutoTokenizer.from_pretrained("grammarly/coedit-large")
+            self.LMmodel = T5ForConditionalGeneration.from_pretrained("grammarly/coedit-large")
+            self.LMmodel.load_state_dict(torch.load(self.cfg.pretrained_LM_path))
+            self.LMmodel.to("cuda")
+            self.LMmodel.eval()
+            self.LMprompt = "The following is a transcript of a TED talk transcribed based on visual information only. Please correct this transcript:"
+            self.LMBeams = self.cfg.LMBeams
+            print(f"Using LM, Number of beams: {self.LMBeams}")
+            
         if self.cfg.pretrained_model_path:
             ckpt = torch.load(self.cfg.pretrained_model_path, map_location=lambda storage, loc: storage)
             if self.cfg.transfer_frontend:
@@ -48,7 +62,12 @@ class ModelModule(LightningModule):
                 state_dict = {k.replace("model.", ""): v for k, v in state_dict.items()}
                 self.model.load_state_dict(state_dict, strict=True)
                 print("success")
-            if "avsr" in self.cfg.pretrained_model_path:
+            videoEncoderInChkpt = [k for k in ckpt.keys() if "videoEncoder" in k]
+            if len(videoEncoderInChkpt) > 0:
+                videoEncoderInChkpt = True
+            else:
+                videoEncoderInChkpt = False
+            if not videoEncoderInChkpt and "avsr" in self.cfg.pretrained_model_path:
                 #in ckpt:
                 #change aux_encoder to audioEncoder
                 #change encoder to videoEncoder
@@ -60,7 +79,7 @@ class ModelModule(LightningModule):
                 else:
                     state_dict = {k.replace("encoder.", "videoEncoder."): v for k, v in state_dict.items() if not "fusion" in k}
                 self.model.load_state_dict(state_dict, strict=True)
-            elif "asr" in self.cfg.pretrained_model_path and self.cfg.data.modality != "audio":
+            elif not videoEncoderInChkpt and "asr" in self.cfg.pretrained_model_path and self.cfg.data.modality != "audio":
                 encoderEncoderStateDict = {k.replace("encoder.encoders.", ""): v for k, v in ckpt.items() if k.startswith("encoder.encoders.")}
                 # encoderEmbedStatDict = {k.replace("encoder.embed.", ""): v for k, v in ckpt.items() if k.startswith("encoder.embed.")}
 
@@ -74,13 +93,23 @@ class ModelModule(LightningModule):
                     # self.model.encoder.embed.load_state_dict(encoderEmbedStatDict, strict=True)
                 elif self.cfg.data.modality == "audiovisual":
                     #load audio encoder
-                    encoderStateDict = {k.replace("encoder.", ""): v for k, v in ckpt.items() if k.startswith("encoder.")}
-                    self.model.audioEncoder.load_state_dict(encoderStateDict, strict=True)
-                    #load video encoder.encoders
-                    videoPath = "/home/st392/fsl_groups/grp_lip/compute/results/crossModalFinetuned/audioVisualNoComb/model_avg_10.pth"
-                    videoCkpt = torch.load(videoPath, map_location=lambda storage, loc: storage)
-                    encoderStateDict = {k.replace("videoEncoder.", ""): v for k, v in videoCkpt.items() if k.startswith("videoEncoder.")}
-                    self.model.videoEncoder.load_state_dict(encoderStateDict, strict=True)
+                    audioFrontEnd = {k.replace("encoder.frontend.", ""): v for k, v in ckpt.items() if k.startswith("encoder.frontend.")}
+                    self.model.audioFrontEnd.load_state_dict(audioFrontEnd, strict=True)
+                    audioEmbed = {k.replace("encoder.embed.", ""): v for k, v in ckpt.items() if k.startswith("encoder.embed.")}
+                    self.model.audioEmbed.load_state_dict(audioEmbed, strict=True)
+                    audioAfterNorm = {k.replace("encoder.after_norm.", ""): v for k, v in ckpt.items() if k.startswith("encoder.after_norm.")}
+                    self.model.audioAfterNorm.load_state_dict(audioAfterNorm, strict=True)
+                    encoders = {k.replace("encoder.encoders.", ""): v for k, v in ckpt.items() if k.startswith("encoder.encoders.")}
+                    self.model.encoders.load_state_dict(encoders, strict=True)
+                    decoder = {k.replace("decoder.", ""): v for k, v in ckpt.items() if k.startswith("decoder.")}
+                    self.model.decoder.load_state_dict(decoder, strict=True)
+                    # encoderStateDict = {k.replace("encoder.", ""): v for k, v in ckpt.items() if k.startswith("encoder.")}
+                    # self.model.audioEncoder.load_state_dict(encoderStateDict, strict=True)
+                    # #load video encoder.encoders
+                    # videoPath = "/home/st392/fsl_groups/grp_lip/compute/results/crossModalFinetuned/audioVisualNoComb/model_avg_10.pth"
+                    # videoCkpt = torch.load(videoPath, map_location=lambda storage, loc: storage)
+                    # encoderStateDict = {k.replace("videoEncoder.", ""): v for k, v in videoCkpt.items() if k.startswith("videoEncoder.")}
+                    # self.model.videoEncoder.load_state_dict(encoderStateDict, strict=True)
                     #load video encoder.embed
                     # self.model.videoEncoder.embed.load_state_dict(encoderEmbedStatDict, strict=True)
                 #load decoder.decoders state_dict
@@ -157,6 +186,10 @@ class ModelModule(LightningModule):
                 nbest_hyps = [h.asdict() for h in nbest_hyps[: min(len(nbest_hyps), 1)]]
                 predicted_token_id = torch.tensor(list(map(int, nbest_hyps[0]["yseq"][1:])))
                 predicted = self.text_transform.post_process(predicted_token_id).replace("<eos>", "")
+                if self.LMmodel is not None:
+                    input_ids = self.LMtokenizer(self.LMprompt + " " + predicted.lower(), return_tensors="pt").input_ids.to("cuda")
+                    outputs = self.LMmodel.generate(input_ids,num_beams=self.LMBeams)
+                    predicted = self.LMtokenizer.decode(outputs[0].cpu().numpy(), skip_special_tokens=True)
                 self.total_edit_distance[modalityOptions[i]] += compute_word_level_distance(actual, predicted)
                 self.total_length[modalityOptions[i]] += len(actual.split())
             return
@@ -171,7 +204,10 @@ class ModelModule(LightningModule):
 
             token_id = sample["target"]
             actual = self.text_transform.post_process(token_id)
-
+            if self.LMmodel is not None:
+                input_ids = self.LMtokenizer(self.LMprompt + " " + predicted, return_tensors="pt").input_ids.to("cuda")
+                outputs = self.LMmodel.generate(input_ids,num_beams=self.LMBeams)
+                predicted = self.LMtokenizer.decode(outputs[0].cpu().numpy(), skip_special_tokens=True)
             self.total_edit_distance += compute_word_level_distance(actual, predicted)
             self.total_length += len(actual.split())
             return

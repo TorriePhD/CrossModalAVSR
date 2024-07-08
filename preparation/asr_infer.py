@@ -53,13 +53,13 @@ text_transform = TextTransform()
 tarFileName = Path(args.root_dir) / args.dataset /f"{args.dataset}_video_seg{args.seg_duration}s"/ f"{args.dataset}_video_seg{args.seg_duration}s{args.job_index}.tar"
 os.makedirs(f"/tmp/{args.job_index}", exist_ok=True)
 os.system(f"tar -xf {tarFileName} -C /tmp/{args.job_index} --keep-old-files")
-transcriptTarFile = Path(args.root_dir) /args.dataset/ f"{args.dataset}_train_transcript_lengths_seg{args.seg_duration}.{args.groups}.{args.job_index}.tar"
+transcriptTarFile = Path(args.root_dir) /args.dataset/ f"medium_{args.dataset}_train_transcript_lengths_seg{args.seg_duration}.{args.groups}.{args.job_index}.tar"
 # Load video files
 files_to_process = sorted(glob.glob(f"/tmp/{args.job_index}/**/*.wav", recursive=True))
 # Label filename
 label_filename = os.path.join(
     args.root_dir,
-    "labels",
+    "labelsMedium",
     f"{args.dataset}_train_transcript_lengths_seg{args.seg_duration}s.csv"
     if args.groups <= 1
     else f"{args.dataset}_train_transcript_lengths_seg{args.seg_duration}s.{args.groups}.{args.job_index}.csv",
@@ -71,7 +71,7 @@ print(f"Directory {os.path.dirname(label_filename)} created")
 f = open(label_filename, "w")
 
 # Load ASR model
-model = whisper.load_model("large-v3", device="cuda")
+model = whisper.load_model("medium.en", device="cuda")
 
 # Transcription
 for filename in tqdm(files_to_process):

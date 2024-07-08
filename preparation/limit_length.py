@@ -54,9 +54,9 @@ def main():
         help="Max length value"
     )
     args = parser.parse_args()
-    src_filename = f"{args.root_dir}{args.dataset}_train_transcript_lengths_seg{args.seg_duration}s.csv"
-    src_filename = os.path.join(args.root_dir, "labels", f"{args.dataset}_train_transcript_lengths_seg{args.seg_duration}s.csv")
-    dst_filename = os.path.join(args.root_dir, "labels", f"{args.dataset}_train_transcript_lengths_seg{args.seg_duration}s_0to{args.max_length}.csv")
+    src_filename = f"{args.root_dir}{args.dataset}_train-val_transcript_lengths_seg{args.seg_duration}s.csv"
+    src_filename = os.path.join(args.root_dir, "labels", f"{args.dataset}_train-val_transcript_lengths_seg{args.seg_duration}s.csv")
+    dst_filename = os.path.join(args.root_dir, "labels", f"{args.dataset}_train-val_transcript_lengths_seg{args.seg_duration}s_0to{args.max_length}.csv")
     process_files(src_filename, dst_filename, args.max_length)
     print("Done.")
 

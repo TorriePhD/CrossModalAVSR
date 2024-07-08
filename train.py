@@ -44,7 +44,7 @@ def main(cfg):
     datamodule = DataModule(cfg)
     #get name of exp_dir
     exp_dir_name = os.path.basename(os.path.normpath(cfg.exp_dir))
-    logger = TensorBoardLogger(save_dir="/home/st392/fsl_groups/grp_lip/compute/results/lightning_logs", name=exp_dir_name, log_graph=True,version=cfg.exp_name)
+    logger = TensorBoardLogger(save_dir="/nobackup/archive/grp/grp_lip/results/lightning_logs", name=exp_dir_name, log_graph=True,version=cfg.exp_name)
     trainer = Trainer(
         **cfg.trainer,
         logger=logger,

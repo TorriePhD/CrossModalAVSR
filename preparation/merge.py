@@ -46,7 +46,7 @@ assert (
 # Create the filename template for label files
 label_template = os.path.join(
     args.root_dir,
-    "labels",
+    "labelsMedium",
     f"{dataset}_{subset}_transcript_lengths_seg{seg_duration}s.{args.groups}",
 )
 
@@ -61,7 +61,7 @@ for job_index in range(args.groups):
 # Write the merged labels to a new file
 dst_label_filename = os.path.join(
     args.root_dir,
-    "labels",
+    "labelsMedium",
     f"{dataset}_{subset}_transcript_lengths_seg{seg_duration}s.csv",
 )
 
@@ -78,9 +78,9 @@ print(
 
 # Remove the label files for each job index
 print("** Remove the temporary label files **")
-for job_index in range(args.groups):
-    label_filename = f"{label_template}.{job_index}.csv"
-    if os.path.exists(label_filename):
-        os.remove(label_filename)
+# for job_index in range(args.groups):
+#     label_filename = f"{label_template}.{job_index}.csv"
+#     if os.path.exists(label_filename):
+#         os.remove(label_filename)
 
 print("** Finish **")
