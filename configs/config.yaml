@@ -16,6 +16,8 @@ exp_name:
 gpus: 
 slurm_job_id:
 file_path:
+index:
+crop: True
 ckpt_path:
 pretrained_model_path:
 pretrained_LM_path:

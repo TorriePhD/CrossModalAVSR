@@ -12,6 +12,7 @@ class InferencePipeline(torch.nn.Module):
     def __init__(self, cfg, detector="mediapipe"):
         super(InferencePipeline, self).__init__()
         self.modality = cfg.data.modality
+        self.crop = cfg.crop
         if self.modality in ["audio", "audiovisual"]:
             self.audio_transform = AudioTransform(subset="test")
         if self.modality in ["video", "audiovisual"]:
@@ -45,8 +46,9 @@ class InferencePipeline(torch.nn.Module):
 
         if self.modality in ["video", "audiovisual"]:
             video = self.load_video(data_filename)
-            landmarks = self.landmarks_detector(video)
-            video = self.video_process(video, landmarks)
+            if self.crop:
+                landmarks = self.landmarks_detector(video)
+                video = self.video_process(video, landmarks)
             video = torch.tensor(video)
             video = video.permute((0, 3, 1, 2))
             video = self.video_transform(video)
@@ -93,6 +95,7 @@ class InferencePipeline(torch.nn.Module):
 def main(cfg):
     pipeline = InferencePipeline(cfg)
     transcript = pipeline(cfg.file_path)
+    print(transcript)
     return transcript
 
 

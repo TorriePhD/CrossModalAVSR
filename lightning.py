@@ -153,7 +153,7 @@ class ModelModule(LightningModule):
         self.beam_search = get_beam_search_decoder(self.model, self.token_list)
         modalities = None
         if self.cfg.data.modality == "audiovisual": 
-            enc_feat, _, _, _, modalities = self.model.getAllModalFeatures(sample) #TODO fix this to do only video I beleive this is just for the demo code. maybe eval but probably not.
+            enc_feat = self.model.getSingleModalFeatures(sample.unsqueeze(0), None, "video",None)
         else:
             enc_feat, _ = self.model.encoder(sample.unsqueeze(0).to(self.device), None)
         enc_feat = enc_feat.squeeze(0)

@@ -7,3 +7,4 @@ outputs/
 *.pyc
 *.tar
 .DS_Store
+scripts/    
