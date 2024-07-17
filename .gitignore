@@ -7,4 +7,12 @@ outputs/
 *.pyc
 *.tar
 .DS_Store
-scripts/    
+scripts/ 
+*.mp4
+fairseq/
+face_alignment/
+face_detection/
+dependencies/   
+*.out
+compute/
+*.pth
