@@ -37,7 +37,7 @@ from espnet.nets.pytorch_backend.transformer.embedding import (
 from espnet.nets.pytorch_backend.transformer.encoder_layer import EncoderLayer
 from espnet.nets.pytorch_backend.transformer.layer_norm import LayerNorm
 from espnet.nets.pytorch_backend.transformer.positionwise_feed_forward import PositionwiseFeedForward
-
+from espnet.nets.pytorch_backend.LM.transformer import TransformerLM
 from espnet.nets.pytorch_backend.transformer.repeat import repeat
 
 class E2E(torch.nn.Module):
@@ -112,7 +112,8 @@ class E2E(torch.nn.Module):
                 )
             else:
                 self.ctc = None
-                
+            self.LM = TransformerLM(odim, args["LM"])
+            self.LM.load_state_dict(torch.load("/home/st392/groups/grp_lip/nobackup/archive/datasets/LMmodel.pth"))
         else:
             self.encoder = self.createEncoder(args)
             self.transformer_input_layer = args.transformer_input_layer
@@ -369,7 +370,8 @@ class E2E(torch.nn.Module):
         else:
             pred_pad = None
         loss_att = self.criterion(pred_pad, ys_out_pad)
-        loss = self.mtlalpha * loss_ctc + (1 - self.mtlalpha) * loss_att
+        loss_lm,_,_ = self.LM(pred_pad, ys_out_pad)
+        loss = self.mtlalpha * loss_ctc + (1 - self.mtlalpha) * loss_att + loss_lm
 
         accAll = th_accuracy(
             pred_pad.view(-1, self.odim), ys_out_pad, ignore_label=self.ignore_id
@@ -384,4 +386,4 @@ class E2E(torch.nn.Module):
         acc["audiovisual"] = th_accuracy(  
             pred_pad[modalities==2].view(-1, self.odim), ys_out_pad[modalities==2], ignore_label=self.ignore_id
         )
-        return loss, loss_ctc, loss_att, accAll, acc
+        return loss, loss_ctc, loss_att, loss_lm, accAll, acc

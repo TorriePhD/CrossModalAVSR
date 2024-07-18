@@ -3,3 +3,4 @@ defaults:
   - visual_backbone: resnet_conformer
   - audio_backbone: resnet_conformer
   - fusion: feedforward
+  - LM: LM

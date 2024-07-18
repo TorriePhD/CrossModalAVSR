@@ -91,6 +91,7 @@ class Encoder(torch.nn.Module):
         padding_idx=-1,
         relu_type="prelu",
         a_upsample_ratio=1,
+        idim=83,
     ):
         """Construct an Encoder object."""
         super(Encoder, self).__init__()
@@ -100,14 +101,24 @@ class Encoder(torch.nn.Module):
             pos_enc_class = RelPositionalEncoding
 
         # -- frontend module.
-        if input_layer == "conv1d":
+        
+        elif input_layer == "conv1d":
             self.frontend = Conv1dResNet(relu_type=relu_type, a_upsample_ratio=a_upsample_ratio)
         elif input_layer == "conv3d":
             self.frontend = Conv3dResNet(relu_type=relu_type)
         else:
             self.frontend = None
         # -- backend module.
-        if input_layer in ["conv1d", "conv3d"]:
+        self.input_layer = input_layer
+        if input_layer == "linear":
+            self.embed = torch.nn.Sequential(
+                torch.nn.Linear(idim, attention_dim),
+                torch.nn.LayerNorm(attention_dim),
+                torch.nn.Dropout(dropout_rate),
+                torch.nn.ReLU(),
+                pos_enc_class(attention_dim, positional_dropout_rate),
+            )
+        elif input_layer in ["conv1d", "conv3d"]:
             self.embed = torch.nn.Sequential(torch.nn.Linear(512, attention_dim), pos_enc_class(attention_dim, positional_dropout_rate))
         else:
             raise NotImplementedError("Support only conv1d and conv3d")
@@ -163,8 +174,9 @@ class Encoder(torch.nn.Module):
         """
         if isinstance(self.frontend, (Conv1dResNet, Conv3dResNet)):
             xs = self.frontend(xs)
-
         xs = self.embed(xs)
+        if self.embed_layer == "linear":
+            print(f"linear embed {xs.shape}")
         xs, masks = self.encoders(xs, masks)
 
         if isinstance(xs, tuple):
