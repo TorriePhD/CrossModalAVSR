@@ -1,5 +1,5 @@
-adim: 512
-aheads: 16
+adim: 768
+aheads: 12
 eunits: 3072
 elayers: 12
 transformer_input_layer: conv3d
@@ -12,8 +12,8 @@ cnn_module_kernel: 31
 zero_triu: False
 a_upsample_ratio: 1
 relu_type: swish
-ddim: 512
-dheads: 16
+ddim: 768
+dheads: 12
 dunits: 3072
 dlayers: 6
 lsm_weight: 0.1

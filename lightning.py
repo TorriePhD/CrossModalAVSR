@@ -8,6 +8,7 @@ from espnet.nets.batch_beam_search import BatchBeamSearch
 from espnet.nets.pytorch_backend.e2e_asr_conformer import E2E
 from espnet.nets.scorers.length_bonus import LengthBonus
 from espnet.nets.scorers.ctc import CTCPrefixScorer
+from espnet.nets.pytorch_backend.LM.transformer import TransformerLM
 
 
 def compute_word_level_distance(seq1, seq2):
@@ -28,12 +29,16 @@ class ModelModule(LightningModule):
             self.backbone_args["audio_backbone"] = self.cfg.model.audio_backbone
             self.backbone_args["visual_backbone"] = self.cfg.model.visual_backbone
             self.backbone_args["fusion"] = self.cfg.model.fusion
-            self.backbone_args["LM"] = self.cfg.model.LM
 
         self.text_transform = TextTransform()
         self.token_list = self.text_transform.token_list
         self.model = E2E(len(self.token_list), self.backbone_args)
-
+        self.LMScorer = None
+        if cfg.useLMScorer:
+            self.LMScorer = TransformerLM(len(self.token_list), self.cfg.model.LM)
+            self.LMScorer.load_state_dict(torch.load("/home/st392/groups/grp_lip/nobackup/archive/datasets/LMmodel.pth"))
+            self.LMScorer.eval()
+        
         # -- initialise
         self.LMtokenizer = None
         self.LMmodel = None
@@ -151,7 +156,7 @@ class ModelModule(LightningModule):
         return [optimizer], [scheduler]
 
     def forward(self, sample):
-        self.beam_search = get_beam_search_decoder(self.model, self.token_list)
+        self.beam_search = get_beam_search_decoder(self.model, self.token_list,LMScorer=self.LMScorer)
         modalities = None
         if self.cfg.data.modality == "audiovisual": 
             enc_feat = self.model.getSingleModalFeatures(sample.unsqueeze(0), None, "video",None)
@@ -177,7 +182,7 @@ class ModelModule(LightningModule):
             sample["input"]["video"] = sample["input"]["video"].unsqueeze(0)
             enc_feat, _, _, _, modalities = self.model.getAllModalFeatures(sample["input"])
             modalityOptions = ["video","audio","audiovisual"]
-            self.beam_search = get_beam_search_decoder(self.model, self.token_list)
+            self.beam_search = get_beam_search_decoder(self.model, self.token_list,LMScorer=self.LMScorer)
             token_id = sample["target"]
             actual = self.text_transform.post_process(token_id)
             for i in range(len(modalityOptions)):
@@ -191,6 +196,7 @@ class ModelModule(LightningModule):
                     input_ids = self.LMtokenizer(self.LMprompt + " " + predicted.lower(), return_tensors="pt").input_ids.to("cuda")
                     outputs = self.LMmodel.generate(input_ids,num_beams=self.LMBeams)
                     predicted = self.LMtokenizer.decode(outputs[0].cpu().numpy(), skip_special_tokens=True)
+                    print(predicted,actual)
                 self.total_edit_distance[modalityOptions[i]] += compute_word_level_distance(actual, predicted)
                 self.total_length[modalityOptions[i]] += len(actual.split())
             return
@@ -215,16 +221,15 @@ class ModelModule(LightningModule):
 
     def _step(self, batch, batch_idx, step_type):
         if self.cfg.data.modality == "audiovisual":
-            loss, loss_ctc, loss_att,loss_lm, acc, accs = self.model(batch["inputs"], batch["input_lengths"], batch["targets"])
+            loss, loss_ctc, loss_att, acc, accs = self.model(batch["inputs"], batch["input_lengths"], batch["targets"])
         else:
-            loss, loss_ctc, loss_att, loss_lm, acc = self.model(batch["inputs"], batch["input_lengths"], batch["targets"])
+            loss, loss_ctc, loss_att, acc = self.model(batch["inputs"], batch["input_lengths"], batch["targets"])
         batch_size = len(batch["inputs"])
 
         if step_type == "train":
             self.log("loss", loss, on_step=True, on_epoch=True, batch_size=batch_size)
             self.log("loss_ctc", loss_ctc, on_step=False, on_epoch=True, batch_size=batch_size)
             self.log("loss_att", loss_att, on_step=False, on_epoch=True, batch_size=batch_size)
-            self.log("loss_lm", loss_lm, on_step=False, on_epoch=True, batch_size=batch_size)
             self.log("decoder_acc", acc, on_step=True, on_epoch=True, batch_size=batch_size)
             if self.cfg.data.modality == "audiovisual":
                 self.log("audio_acc", accs["audio"], on_step=False, on_epoch=True, batch_size=batch_size)
@@ -238,7 +243,6 @@ class ModelModule(LightningModule):
             self.log("loss_val", loss, batch_size=batch_size)
             self.log("loss_ctc_val", loss_ctc, batch_size=batch_size)
             self.log("loss_att_val", loss_att, batch_size=batch_size)
-            self.log("loss_lm_val", loss_lm, batch_size=batch_size)
             self.log("decoder_acc_val", acc, batch_size=batch_size)
             if self.cfg.data.modality == "audiovisual":
                 self.log("audio_acc_val", accs["audio"], batch_size=batch_size)
@@ -270,7 +274,7 @@ class ModelModule(LightningModule):
             self.total_length = 0
 
         self.text_transform = TextTransform()
-        self.beam_search = get_beam_search_decoder(self.model, self.token_list)
+        self.beam_search = get_beam_search_decoder(self.model, self.token_list,LMScorer=self.LMScorer)
 
     def on_test_epoch_end(self):
         if self.cfg.data.modality == "audiovisual":
@@ -280,21 +284,23 @@ class ModelModule(LightningModule):
             self.log("wer", self.total_edit_distance / self.total_length)
 
 
-def get_beam_search_decoder(model, token_list, ctc_weight=0.1, beam_size=40):
+def get_beam_search_decoder(model, token_list, ctc_weight=0.1, beam_size=40,LMScorer=None):
     scorers = {
         "decoder": model.decoder,
         "ctc": CTCPrefixScorer(model.ctc, model.eos),
         "length_bonus": LengthBonus(len(token_list)),
-        "lm": None
+        "lm": None,
     }
-
+    
     weights = {
         "decoder": 1.0 - ctc_weight,
         "ctc": ctc_weight,
         "lm": 0.0,
         "length_bonus": 0.0,
     }
-
+    if LMScorer is not None:
+        scorers["lm"] = LMScorer
+        weights["lm"] = 0.3
     return BatchBeamSearch(
         beam_size=beam_size,
         vocab_size=len(token_list),

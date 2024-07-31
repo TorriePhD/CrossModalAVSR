@@ -159,14 +159,11 @@ class TransformerLM(nn.Module, LMInterface, BatchScorerInterface):
             in perplexity: p(t)^{-n} = exp(-log p(t) / n)
 
         """
-        x = x.long()
         xm = x != 0
-        print(f"x {x.shape}")
         if self.embed_drop is not None:
             emb = self.embed_drop(self.embed(x))
         else:
             emb = self.embed(x)
-        print(f"emb {emb.shape}")
         h, _ = self.encoder(emb, self._target_mask(x))
         y = self.decoder(h)
         loss = F.cross_entropy(y.view(-1, y.shape[-1]), t.view(-1), reduction="none")

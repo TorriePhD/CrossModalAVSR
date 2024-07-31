@@ -36,7 +36,7 @@ class LanguageID:
             if language != "en":
                 #remove the wavfile
                 print(f"removing {wavFile}, detected language: {language}")
-                # wavFile.unlink()
+                wavFile.unlink()
 
 if __name__ == "__main__":
     langID = LanguageID()

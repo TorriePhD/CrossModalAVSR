@@ -22,6 +22,7 @@ ckpt_path:
 pretrained_model_path:
 pretrained_LM_path:
 LMBeams: 1
+useLMScorer: False
 transfer_frontend:
 transfer_encoder:
 
