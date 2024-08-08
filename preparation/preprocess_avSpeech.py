@@ -16,7 +16,13 @@ import fcntl
 warnings.filterwarnings("ignore")
 
 # Argument parsing
-parser = argparse.ArgumentParser(description="AVspeech Preprocessing")
+parser = argparse.ArgumentParser(description="VoxCeleb2 Preprocessing")
+parser.add_argument(
+    "--vid-dir",
+    type=str,
+    required=True,
+    help="Directory where the video sequence is stored",
+)
 parser.add_argument(
     "--aud-dir",
     type=str,
@@ -28,6 +34,17 @@ parser.add_argument(
     type=str,
     default="",
     help="Directory where lid.csv is saved",
+)
+parser.add_argument(
+    "--landmarks-dir",
+    type=str,
+    default=None,
+    help="Directory of landmarks",
+)
+parser.add_argument(
+    "--detector",
+    type=str,
+    help="Type of face detector",
 )
 parser.add_argument(
     "--root-dir",
@@ -48,6 +65,12 @@ parser.add_argument(
     help="Max duration (second) for each segment, (Default: 24)",
 )
 parser.add_argument(
+    "--combine-av",
+    type=lambda x: (str(x).lower() == "true"),
+    default=False,
+    help="Merges the audio and video components to a media file",
+)
+parser.add_argument(
     "--groups",
     type=int,
     default=1,
@@ -61,9 +84,18 @@ parser.add_argument(
 )
 args = parser.parse_args()
 
+args.aud_dir = args.vid_dir 
+
 # Constants
+seg_vid_len = args.seg_duration * 25
 seg_aud_len = args.seg_duration * 16000
+dst_vid_dir = os.path.join(
+    args.root_dir, args.dataset, f"{args.dataset}_video_seg{args.seg_duration}s"
+)
 # Load data
+vid_dataloader = AVSRDataLoader(
+    modality="video", detector=args.detectorland, convert_gray=False
+)
 aud_dataloader = AVSRDataLoader(modality="audio")
 
 # Load video and audio files
@@ -76,15 +108,7 @@ unit = math.ceil(len(filenames) / args.groups)
 files_to_process = filenames[args.job_index * unit : (args.job_index + 1) * unit]
 failed = 0 
 for vid_filename in tqdm(files_to_process):
-    if args.landmarks_dir:
-        landmarks_filename = (
-            vid_filename.replace(args.vid_dir, args.landmarks_dir)[:-4] + ".pkl"
-        )
-        #remove /mp4/ from the path
-        landmarks_filename = landmarks_filename.replace("/mp4/", "/")
-        landmarks = pickle.load(open(landmarks_filename, "rb"))
-    else:
-        landmarks = None
+    landmarks = None
     try:
         video_data = vid_dataloader.load_data(vid_filename, landmarks)
         audio_data = aud_dataloader.load_data(vid_filename)
@@ -145,10 +169,5 @@ for vid_filename in tqdm(files_to_process):
             os.remove(dst_aud_filename)
             os.remove(dst_vid_filename)
             shutil.move(dst_vid_filename[:-4] + ".m.mp4", dst_vid_filename)
-        else:
-            command = f"tar -rf {tarFile} {dst_vid_filename} {dst_aud_filename}"
-            os.system(command)
-            Path(dst_vid_filename).unlink()
-            Path(dst_aud_filename).unlink()
             
 print(f"Failed: {failed} out of {len(files_to_process)}")  

@@ -262,7 +262,8 @@ class E2E(torch.nn.Module):
         xAudio = self.audioAfterNorm(xAudio)
         size = vidSize
         #padd xAud to match size of xVid
-        xAudio = torch.nn.functional.pad(xAudio, (0, 0, 0, size - xAudio.size(1)), "constant")
+        if size is not None:
+            xAudio = torch.nn.functional.pad(xAudio, (0, 0, 0, size - xAudio.size(1)), "constant")
         return xAudio
     def getVideoFeatures(self, video, padding_mask=None):
         # xVideo,_ = self.videoEncoder(video, padding_mask)
@@ -314,6 +315,19 @@ class E2E(torch.nn.Module):
         modality[whereVideo & whereAudio] = 2
         return modality
     def getAllModalFeatures(self,x,lengths=None,label=None):
+        #get audioOnlyMask as indicated where x['video'] is all zeros
+        audioOnlyMask = x['video'].sum(dim=(1,2,3,4)) == 0
+        otherMask = x['video'].sum(dim=(1,2,3,4)) != 0
+        audioOnlyCount = audioOnlyMask.sum()
+        otherCount = otherMask.sum()
+        # audioOnlyBatch = False
+        if otherCount == 0:
+            print("still getting this!!!")
+            raise ValueError("No video data present in batch")
+            # audioOnlyBatch = True
+            # otherMask[0] = True
+            # otherCount += 1
+            # audioOnlyCount -= 1
         if lengths is not None:
             padding_mask = {}
             for key in lengths.keys():
@@ -321,15 +335,21 @@ class E2E(torch.nn.Module):
                 if key == "audio":
                     myLengths = torch.div(lengths[key], 640, rounding_mode="trunc")
                 padding_mask[key] = make_non_pad_mask(myLengths).to(x[key].device).unsqueeze(-2)
+            padding_mask["video"] = padding_mask["video"][otherMask]
+            lengths["video"] = lengths["video"][otherMask]
         else:
             padding_mask = None
-        vidSize = x["video"].size(1)
+            
+        if otherCount == 0:
+            vidSize = torch.div(x["audio"].size(1), 640, rounding_mode="trunc")
+        else:
+            vidSize = x["video"].size(1)
         # modalities = self.getModalities(x)
-        enc_feat = torch.zeros(x['video'].size(0)*3, x['video'].size(1), self.adim, device=x["video"].device)
-        modalities = torch.cat((torch.zeros(x['video'].size(0), dtype=torch.long, device=x["video"].device),
-                                torch.ones(x['video'].size(0), dtype=torch.long, device=x["video"].device),
-                                torch.ones(x['video'].size(0), dtype=torch.long, device=x["video"].device)+1))
-
+        enc_feat = torch.zeros(audioOnlyCount+otherCount*3, vidSize, self.adim, device=x["video"].device)
+        modalities = torch.cat((torch.zeros(otherCount, dtype=torch.long, device=x["video"].device),
+                                torch.ones(otherCount+audioOnlyCount, dtype=torch.long, device=x["video"].device),
+                                torch.ones(otherCount, dtype=torch.long, device=x["video"].device)+1))
+        
         for modality in ["audio", "video"]:
             if modality == "audio":
                 indexes = modalities == 1
@@ -337,26 +357,39 @@ class E2E(torch.nn.Module):
                 audio = x["audio"].clone()
             elif modality == "video":
                 indexes = modalities == 0
-                video = x["video"].clone()
+                video = x["video"][otherMask].clone()
                 audio = None
+            if sum(indexes) == 0:
+                continue
             enc_feat[indexes] = self.getSingleModalFeatures(video, audio, modality, padding_mask, vidSize, )
         videoFeat = enc_feat[modalities==0].clone()
-        audioFeat = enc_feat[modalities==1].clone()
+        audioFeat = enc_feat[modalities==1].clone()[otherMask]
         indexes = modalities == 2
-        enc_feat[indexes] = self.getCombinedFeatures(videoFeat, audioFeat)
+        if sum(indexes) > 0:
+            enc_feat[indexes] = self.getCombinedFeatures(videoFeat, audioFeat)
         # ctc loss
         #repeat label 3 times
+        if vidSize is None:
+            vidSize = enc_feat.size(1)
         if label is not None:
-            label = torch.cat((label, label,label), dim=0)
+            otherLabels = label[otherMask]
+            # if audioOnlyBatch:
+            #     otherLabels[0] = 0
+            label = torch.cat((otherLabels,label,otherLabels), dim=0) #resume here
+            
         if lengths is not None:
-            lengths["video"] = torch.cat((lengths["video"], lengths["video"],lengths["video"]), dim=0)
-            lengths["audio"] = torch.cat((lengths["audio"], lengths["audio"],lengths["video"]), dim=0)
-            padding_mask["video"] = torch.cat((padding_mask["video"], padding_mask["video"],padding_mask["video"]), dim=0)
-            padding_mask["audio"] = torch.cat((padding_mask["audio"], padding_mask["audio"],padding_mask["audio"]), dim=0)
-
+            total = lengths["video"].size()[0]+lengths["audio"].size()[0]+lengths["video"].size()[0]
+            #repeat vidSize total times
+            lengths["video"] = torch.tensor([vidSize]).repeat(total)
+            # lengths["audio"] = torch.cat((lengths["audio"], lengths["video"],lengths["video"]), dim=0)
+            
+            padding_mask["video"] = make_non_pad_mask(lengths["video"]).to(x["video"].device).unsqueeze(-2)
+            # padding_mask["video"] = torch.cat(( padding_mask["video"],padding_mask["video"],padding_mask["video"]), dim=0)
+            # padding_mask["audio"] = torch.cat((padding_mask["audio"], padding_mask["video"],padding_mask["video"]), dim=0)
         return enc_feat, lengths, padding_mask, label, modalities
     def forward_crossmodal(self, x, lengths, label):
         enc_feat, lengths, padding_mask, label, modalities = self.getAllModalFeatures(x,lengths,label)
+        
         loss_ctcMod, ys_hat = self.ctc(enc_feat, lengths["video"], label)
         loss_ctc = loss_ctcMod
         
@@ -374,13 +407,16 @@ class E2E(torch.nn.Module):
             pred_pad.view(-1, self.odim), ys_out_pad, ignore_label=self.ignore_id
         )
         acc = {}
-        acc["video"] = th_accuracy(
-            pred_pad[modalities==0].view(-1, self.odim), ys_out_pad[modalities==0], ignore_label=self.ignore_id
-        )
-        acc["audio"] = th_accuracy(
-            pred_pad[modalities==1].view(-1, self.odim), ys_out_pad[modalities==1], ignore_label=self.ignore_id
-        )
-        acc["audiovisual"] = th_accuracy(  
-            pred_pad[modalities==2].view(-1, self.odim), ys_out_pad[modalities==2], ignore_label=self.ignore_id
-        )
+        if sum(modalities==0) > 0:
+            acc["video"] = th_accuracy(
+                pred_pad[modalities==0].view(-1, self.odim), ys_out_pad[modalities==0], ignore_label=self.ignore_id
+            )
+        if sum(modalities==1) > 0:
+            acc["audio"] = th_accuracy(
+                pred_pad[modalities==1].view(-1, self.odim), ys_out_pad[modalities==1], ignore_label=self.ignore_id
+            )
+        if sum(modalities==2) > 0:
+            acc["audiovisual"] = th_accuracy(
+                pred_pad[modalities==2].view(-1, self.odim), ys_out_pad[modalities==2], ignore_label=self.ignore_id
+            )
         return loss, loss_ctc, loss_att, accAll, acc

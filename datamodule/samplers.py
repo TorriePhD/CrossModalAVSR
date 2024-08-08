@@ -12,7 +12,7 @@ import random
 
 
 class ByFrameCountSampler(Sampler):
-    def __init__(self, dataset, max_frames_per_gpu, shuffle=True, seed=0,modality = "audiovisual"):
+    def __init__(self, dataset, max_frames_per_gpu, shuffle=True, seed=0,modality = "audiovisual",validation=False):
         self.dataset = dataset
         self.max_frames_per_gpu = max_frames_per_gpu
         self.sizes = [item[2] for item in self.dataset.list]
@@ -21,51 +21,119 @@ class ByFrameCountSampler(Sampler):
         self.seed = seed
         self.epoch = 0
 
-        
+        self.validation = validation
         self.modality = modality
-        if self.modality == "audiovisual" and False:
-            self.audio_only_indices = []
-            self.video_only_indices = []
-            self.audiovisual_indices = []
-            for i in range(len(self.dataset.list)):
-                if self.dataset.list[i][-1] == "audio":
-                    self.audio_only_indices.append(i)
-                elif self.dataset.list[i][-1] == "video":
-                    self.video_only_indices.append(i)
-                else:
-                    self.audiovisual_indices.append(i)
-            # Shuffle indices if required
-            if self.shuffle:
-                random.seed(self.seed + self.epoch)
-                random.shuffle(self.audio_only_indices)
-                random.shuffle(self.video_only_indices)
-                random.shuffle(self.audiovisual_indices)
-
-            # Iterate and yield balanced batches
-            batch = []
-            length = 0
-            self.batches = []
-            while self.audio_only_indices or self.video_only_indices or self.audiovisual_indices:
-                if self.audio_only_indices:
-                    batch.append(self.audio_only_indices.pop())
-                    length += self.sizes[batch[-1]]
-                if self.video_only_indices:
-                    batch.append(self.video_only_indices.pop())
-                    length += self.sizes[batch[-1]]
-                if self.audiovisual_indices:
-                    batch.append(self.audiovisual_indices.pop())
-                    length += self.sizes[batch[-1]]
-
-                if (not self.audio_only_indices and not self.video_only_indices and not self.audiovisual_indices) or length >= self.max_frames_per_gpu:
-                    self.batches.append(batch)
-                    batch = []
-                    length = 0
-            self.batchCount = len(self.batches)       
+        if self.modality == "audiovisual" and not self.validation:
+            self._get_AV_Batch()
         else:
             batch_indices = data_utils.batch_by_size(
                 self._get_indices(), lambda i: self.sizes[i], max_tokens=max_frames_per_gpu
             )
             self.num_batches = len(batch_indices)
+
+    def slight_shuffle(self, sorted_list, window_ratio=0.01,AV=False):
+
+        length = len(sorted_list)
+        window_size = max(1, int(length * window_ratio))
+        
+        shuffled_list = sorted_list[:]
+        for i in range(length):
+            # Define the window for swapping
+            start = max(0, i - window_size)
+            end = min(length, i + window_size + 1)
+            
+            # Choose a random index within the window
+            swap_with = random.randint(start, end - 1)
+            
+            # Swap elements
+            shuffled_list[i], shuffled_list[swap_with] = shuffled_list[swap_with], shuffled_list[i]
+        
+        return shuffled_list
+    def _get_AV_Batch(self):
+        self.audio_only_indices = []
+        random.seed(self.seed + self.epoch)
+        # self.video_only_indices = []
+        self.audiovisual_indices = []
+        for i in range(len(self.dataset.list)):
+            if self.dataset.list[i][-1] == "audio":
+                self.audio_only_indices.append(i)
+            # elif self.dataset.list[i][-1] == "video":
+            #     self.video_only_indices.append(i)
+            else:
+                self.audiovisual_indices.append(i)
+        # Shuffle indices if required
+        self.audiovisual_indices.sort(key=lambda idx: self.sizes[idx], reverse=True)
+        self.audio_only_indices.sort(key=lambda idx: self.sizes[idx] // 4, reverse=True)
+        if self.shuffle:
+            self.audiovisual_indices = self.slight_shuffle(self.audiovisual_indices, window_ratio=0.001,AV=True)
+            self.audio_only_indices = self.slight_shuffle(self.audio_only_indices, window_ratio=0.001)
+        # Iterate and yield balanced batches
+        batch = []
+        length = 0
+        self.batches = []
+        # while self.audio_only_indices or self.video_only_indices or self.audiovisual_indices:
+        audioBatchCount = 0
+        audioVisualBatchCount = 0
+        copyAudioVisualIndices = self.audiovisual_indices.copy()
+        #shuffle
+        random.shuffle(copyAudioVisualIndices)
+        batchChanged = False
+        ogRatio = len(self.audiovisual_indices) / (len(self.audio_only_indices)) if len(self.audio_only_indices) != 0 else 0
+
+        while self.audio_only_indices or self.audiovisual_indices:
+            
+            fullRatio = len(self.audiovisual_indices) / (len(self.audio_only_indices)) if len(self.audio_only_indices) != 0 else 0
+            batchRatio = audioVisualBatchCount / audioBatchCount if audioBatchCount != 0 else 0 
+            if self.audiovisual_indices:
+                nextAudioVisualIndicie = self.audiovisual_indices[-1]
+                size = self.sizes[nextAudioVisualIndicie]
+                if (size+length)<self.max_frames_per_gpu and  self.audiovisual_indices and ((fullRatio > batchRatio or ogRatio>1) or audioVisualBatchCount == 0 or len(self.audio_only_indices) == 0):
+                    batch.append(self.audiovisual_indices.pop())
+                    length += self.sizes[batch[-1]]
+                    audioVisualBatchCount += 1
+                    batchChanged = True
+            if len(self.audiovisual_indices) == 0 and len(self.audio_only_indices) > 0 and audioVisualBatchCount == 0:
+                batch.append(copyAudioVisualIndices.pop())
+                length += self.sizes[batch[-1]]
+                audioVisualBatchCount += 1
+                batchChanged = True
+            
+            if (not self.audio_only_indices and not self.audiovisual_indices) or length >= self.max_frames_per_gpu:
+                self.batches.append(batch)
+                batch = []
+                length = 0
+                audioBatchCount = 0
+                audioVisualBatchCount = 0
+                if len(self.audio_only_indices) == 0 and len(self.audiovisual_indices) == 0:
+                    break
+            batchRatio = audioVisualBatchCount / audioBatchCount if audioBatchCount != 0 else 0 #0
+            fullRatio = len(self.audiovisual_indices) / len(self.audio_only_indices) if len(self.audio_only_indices) != 0 else 0
+            if self.audio_only_indices:
+                nextAudioIndicie = self.audio_only_indices[-1]
+                size = self.sizes[nextAudioIndicie]//4
+                if self.audio_only_indices and ((fullRatio <= batchRatio or ogRatio>1) or audioBatchCount == 0) and (size+length)<self.max_frames_per_gpu:
+                    batch.append(self.audio_only_indices.pop())
+                    length += self.sizes[batch[-1]]//4
+                    audioBatchCount += 1
+                    batchChanged = True
+            # if self.video_only_indices:
+            #     batch.append(self.video_only_indices.pop())
+            #     length += self.sizes[batch[-1]]
+            
+
+            # if (not self.audio_only_indices and not self.video_only_indices and not self.audiovisual_indices) or length >= self.max_frames_per_gpu:
+            if (not self.audio_only_indices and not self.audiovisual_indices) or length >= self.max_frames_per_gpu or not batchChanged:
+                self.batches.append(batch)
+                batch = []
+                length = 0
+                audioBatchCount = 0
+                audioVisualBatchCount = 0
+            batchChanged = False
+        if self.shuffle:
+            random.seed(self.seed + self.epoch)
+            random.shuffle(self.batches)
+        print("Batch count: ",len(self.batches))
+        self.batchCount = len(self.batches)
     def _get_indices(self):
         if self.shuffle:  # shuffles indices corresponding to equal lengths
             g = torch.Generator()
@@ -78,12 +146,13 @@ class ByFrameCountSampler(Sampler):
         return np.lexsort(order)[::-1]
 
     def __len__(self):
-        # if self.modality == "audiovisual":
-        #     return self.batchCount
+        if self.modality == "audiovisual" and not self.validation:
+            return self.batchCount
         return self.num_batches
 
     def __iter__(self):
-        if self.modality == "audiovisual" and False:
+        if self.modality == "audiovisual" and not self.validation:
+            self._get_AV_Batch()
             return iter(self.batches)
         else:
             batch_indices = data_utils.batch_by_size(
@@ -117,6 +186,8 @@ class DatasetFromSampler(Dataset):
         """
         if self.sampler_list is None:
             self.sampler_list = list(self.sampler)
+        if len(self.sampler_list) <= index:
+            print("Index out of range", index, len(self.sampler_list))
         return self.sampler_list[index]
 
     def __len__(self) -> int:

@@ -63,7 +63,11 @@ class AVDataset(torch.utils.data.Dataset):
         for path_count_label in open(label_path).read().splitlines():
             dataset_name, rel_path, input_length, token_id = path_count_label.split(",")
             if self.modality == "audiovisual":
-                modalities = ["audiovisual"]
+                # if ("trainval" in rel_path and "lrs3" in dataset_name) or "test" in rel_path:
+                if  "lrs3" in dataset_name or "test" in rel_path:
+                    modalities = ["audiovisual"]
+                else:
+                    modalities = ["audio"]
                 for modality in modalities:
                     paths_counts_labels.append(
                         (
@@ -129,6 +133,9 @@ class AVDataset(torch.utils.data.Dataset):
                 print("audio path not exists: ", path[:-4] + ".wav")
             audio = load_audio(path)
             audio = self.audio_transform(audio)
+        if modality == "audio":
+            video = torch.zeros((1, 1, 88, 88))
+
         return {"input":{"video": video, "audio": audio}, "target": token_id}
     def __len__(self):
         return len(self.list)

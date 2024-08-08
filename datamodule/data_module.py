@@ -131,7 +131,7 @@ class DataModule(LightningDataModule):
             video_transform=VideoTransform("val"),
         )
         sampler = ByFrameCountSampler(
-            val_ds, self.cfg.data.max_frames_val, shuffle=False,modality = self.modality
+            val_ds, self.cfg.data.max_frames_val, shuffle=False,modality = self.modality,validation=True
         )
         if self.total_gpus > 1:
             sampler = DistributedSamplerWrapper(sampler, shuffle=False, drop_last=True)

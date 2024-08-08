@@ -5,8 +5,8 @@ import torch
 import torchaudio
 
 # Initialize tokenizer and model
-tokenizer = AutoTokenizer.from_pretrained("google/gemma-2b")
-model = AutoModelForCausalLM.from_pretrained("google/gemma-2b")
+tokenizer = AutoTokenizer.from_pretrained("google/gemma-2-2b")
+model = AutoModelForCausalLM.from_pretrained("google/gemma-2-2b")
 print("Model and tokenizer initialized.")
 
 # Load datasets

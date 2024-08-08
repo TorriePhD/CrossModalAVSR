@@ -232,9 +232,12 @@ class ModelModule(LightningModule):
             self.log("loss_att", loss_att, on_step=False, on_epoch=True, batch_size=batch_size)
             self.log("decoder_acc", acc, on_step=True, on_epoch=True, batch_size=batch_size)
             if self.cfg.data.modality == "audiovisual":
-                self.log("audio_acc", accs["audio"], on_step=False, on_epoch=True, batch_size=batch_size)
-                self.log("vid_acc", accs["video"], on_step=False, on_epoch=True, batch_size=batch_size)
-                self.log("audiovisual_acc", accs["audiovisual"], on_step=False, on_epoch=True, batch_size=batch_size)
+                if "audio" in accs:
+                    self.log("audio_acc", accs["audio"], on_step=False, on_epoch=True, batch_size=batch_size)
+                if "video" in accs:
+                    self.log("vid_acc", accs["video"], on_step=False, on_epoch=True, batch_size=batch_size)
+                if "audiovisual" in accs:
+                    self.log("audiovisual_acc", accs["audiovisual"], on_step=False, on_epoch=True, batch_size=batch_size)
             elif self.cfg.data.modality == "audio":
                 self.log("audio_acc", acc, on_step=False, on_epoch=True, batch_size=batch_size)
             elif self.cfg.data.modality == "video":
@@ -245,9 +248,12 @@ class ModelModule(LightningModule):
             self.log("loss_att_val", loss_att, batch_size=batch_size)
             self.log("decoder_acc_val", acc, batch_size=batch_size)
             if self.cfg.data.modality == "audiovisual":
-                self.log("audio_acc_val", accs["audio"], batch_size=batch_size)
-                self.log("vid_acc_val", accs["video"], batch_size=batch_size)
-                self.log("audiovisual_acc_val", accs["audiovisual"], batch_size=batch_size)
+                if "audio" in accs:
+                    self.log("audio_acc_val", accs["audio"], batch_size=batch_size)
+                if "video" in accs:
+                    self.log("vid_acc_val", accs["video"], batch_size=batch_size)
+                if "audiovisual" in accs:
+                    self.log("audiovisual_acc_val", accs["audiovisual"], batch_size=batch_size)
             elif self.cfg.data.modality == "audio":
                 self.log("audio_acc_val", acc, batch_size=batch_size)
             elif self.cfg.data.modality == "video":
