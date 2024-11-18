@@ -23,7 +23,7 @@ class ByFrameCountSampler(Sampler):
 
         self.validation = validation
         self.modality = modality
-        if self.modality == "audiovisual" and not self.validation:
+        if self.modality == "audiovisual" and not self.validation and False:
             self._get_AV_Batch()
         else:
             batch_indices = data_utils.batch_by_size(
@@ -64,9 +64,9 @@ class ByFrameCountSampler(Sampler):
         # Shuffle indices if required
         self.audiovisual_indices.sort(key=lambda idx: self.sizes[idx], reverse=True)
         self.audio_only_indices.sort(key=lambda idx: self.sizes[idx] // 4, reverse=True)
-        if self.shuffle:
-            self.audiovisual_indices = self.slight_shuffle(self.audiovisual_indices, window_ratio=0.001,AV=True)
-            self.audio_only_indices = self.slight_shuffle(self.audio_only_indices, window_ratio=0.001)
+        # if self.shuffle:
+        #     self.audiovisual_indices = self.slight_shuffle(self.audiovisual_indices, window_ratio=0.001,AV=True)
+        #     self.audio_only_indices = self.slight_shuffle(self.audio_only_indices, window_ratio=0.001)
         # Iterate and yield balanced batches
         batch = []
         length = 0
@@ -76,7 +76,7 @@ class ByFrameCountSampler(Sampler):
         audioVisualBatchCount = 0
         copyAudioVisualIndices = self.audiovisual_indices.copy()
         #shuffle
-        random.shuffle(copyAudioVisualIndices)
+        # random.shuffle(copyAudioVisualIndices)
         batchChanged = False
         ogRatio = len(self.audiovisual_indices) / (len(self.audio_only_indices)) if len(self.audio_only_indices) != 0 else 0
 
@@ -130,9 +130,8 @@ class ByFrameCountSampler(Sampler):
                 audioVisualBatchCount = 0
             batchChanged = False
         if self.shuffle:
-            random.seed(self.seed + self.epoch)
             random.shuffle(self.batches)
-        print("Batch count: ",len(self.batches))
+        print(f"Batch Count: {len(self.batches)}, Seed: {self.seed}, Epoch: {self.epoch}")
         self.batchCount = len(self.batches)
     def _get_indices(self):
         if self.shuffle:  # shuffles indices corresponding to equal lengths
@@ -146,12 +145,12 @@ class ByFrameCountSampler(Sampler):
         return np.lexsort(order)[::-1]
 
     def __len__(self):
-        if self.modality == "audiovisual" and not self.validation:
+        if self.modality == "audiovisual" and not self.validation and False:
             return self.batchCount
         return self.num_batches
 
     def __iter__(self):
-        if self.modality == "audiovisual" and not self.validation:
+        if self.modality == "audiovisual" and not self.validation and False:
             self._get_AV_Batch()
             return iter(self.batches)
         else:
@@ -188,6 +187,8 @@ class DatasetFromSampler(Dataset):
             self.sampler_list = list(self.sampler)
         if len(self.sampler_list) <= index:
             print("Index out of range", index, len(self.sampler_list))
+            #get random index
+            index = random.randint(0,len(self.sampler_list)-1)
         return self.sampler_list[index]
 
     def __len__(self) -> int:

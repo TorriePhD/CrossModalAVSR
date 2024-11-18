@@ -23,7 +23,10 @@ class ModelModule(LightningModule):
         if self.cfg.data.modality == "audio":
             self.backbone_args = self.cfg.model.audio_backbone
         elif self.cfg.data.modality == "video":
-            self.backbone_args = self.cfg.model.visual_backbone
+            self.backbone_args = {}
+            self.backbone_args["audio_backbone"] = self.cfg.model.audio_backbone
+            self.backbone_args["visual_backbone"] = self.cfg.model.visual_backbone
+            self.backbone_args["fusion"] = self.cfg.model.fusion
         elif self.cfg.data.modality == "audiovisual":
             self.backbone_args = {}
             self.backbone_args["audio_backbone"] = self.cfg.model.audio_backbone
@@ -266,7 +269,7 @@ class ModelModule(LightningModule):
         return loss
 
     def on_train_epoch_start(self):
-        sampler = self.trainer.train_dataloader.loaders.batch_sampler
+        sampler = self.trainer.train_dataloader.batch_sampler
         if hasattr(sampler, "set_epoch"):
             sampler.set_epoch(self.current_epoch)
         return super().on_train_epoch_start()

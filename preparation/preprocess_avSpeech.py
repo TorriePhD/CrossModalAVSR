@@ -1,10 +1,9 @@
 import argparse
 import math
-import os
 import pickle
 import shutil
 import warnings
-
+import torchaudio
 import ffmpeg
 from data.data_module import AVSRDataLoader
 from tqdm import tqdm
@@ -12,63 +11,15 @@ from utils import save_vid_aud
 from pathlib import Path
 from time import sleep
 import fcntl
+import torchvision
 
-warnings.filterwarnings("ignore")
 
-# Argument parsing
-parser = argparse.ArgumentParser(description="VoxCeleb2 Preprocessing")
+parser = argparse.ArgumentParser(description="AVspeech Preprocessing")
 parser.add_argument(
-    "--vid-dir",
-    type=str,
-    required=True,
-    help="Directory where the video sequence is stored",
-)
-parser.add_argument(
-    "--aud-dir",
-    type=str,
-    required=True,
-    help="Directory where the audio sequence is stored",
-)
-parser.add_argument(
-    "--label-dir",
-    type=str,
-    default="",
-    help="Directory where lid.csv is saved",
-)
-parser.add_argument(
-    "--landmarks-dir",
-    type=str,
-    default=None,
-    help="Directory of landmarks",
-)
-parser.add_argument(
-    "--detector",
-    type=str,
-    help="Type of face detector",
-)
-parser.add_argument(
-    "--root-dir",
-    type=str,
-    required=True,
-    help="Root directory of preprocessed dataset",
-)
-parser.add_argument(
-    "--dataset",
-    type=str,
-    default="vox2",
-    help="Name of dataset",
-)
-parser.add_argument(
-    "--seg-duration",
+    "--job-index",
     type=int,
-    default=24,
-    help="Max duration (second) for each segment, (Default: 24)",
-)
-parser.add_argument(
-    "--combine-av",
-    type=lambda x: (str(x).lower() == "true"),
-    default=False,
-    help="Merges the audio and video components to a media file",
+    default=0,
+    help="Index to identify separate jobs (useful for parallel processing)",
 )
 parser.add_argument(
     "--groups",
@@ -76,98 +27,55 @@ parser.add_argument(
     default=1,
     help="Number of threads to be used in parallel",
 )
-parser.add_argument(
-    "--job-index",
-    type=int,
-    default=0,
-    help="Index to identify separate jobs (useful for parallel processing)",
-)
+
 args = parser.parse_args()
+job_index = args.job_index
+groups = args.groups
+avSpeechPath = Path("/home/st392/groups/grp_nlp/nobackup/autodelete/datasets/AVSpeech/datasets/AVspeech")
+trainSet = avSpeechPath/"dataTrain"
+trainCsv = avSpeechPath/"avspeech_train.csv"
 
-args.aud_dir = args.vid_dir 
+vid_dataloader = AVSRDataLoader(modality="video",detector="retinaface",convert_gray=False)
 
-# Constants
-seg_vid_len = args.seg_duration * 25
-seg_aud_len = args.seg_duration * 16000
-dst_vid_dir = os.path.join(
-    args.root_dir, args.dataset, f"{args.dataset}_video_seg{args.seg_duration}s"
-)
-# Load data
-vid_dataloader = AVSRDataLoader(
-    modality="video", detector=args.detectorland, convert_gray=False
-)
-aud_dataloader = AVSRDataLoader(modality="audio")
-
-# Load video and audio files
-filenames = [
-    os.path.join(args.vid_dir, _ + ".mp4")
-    for _ in open(os.path.join(args.label_dir, "vox-en.id")).read().splitlines()
-]
-
-unit = math.ceil(len(filenames) / args.groups)
-files_to_process = filenames[args.job_index * unit : (args.job_index + 1) * unit]
-failed = 0 
-for vid_filename in tqdm(files_to_process):
-    landmarks = None
-    try:
-        video_data = vid_dataloader.load_data(vid_filename, landmarks)
-        audio_data = aud_dataloader.load_data(vid_filename)
-        #catch system error too
-    except (UnboundLocalError, TypeError, OverflowError, AssertionError, SystemError, RuntimeError):
-        print(f"Error in loading {vid_filename} file")
-        failed += 1
-        continue
-    if video_data is None:
-        failed += 1
-        continue
-
-    # Process segments
-    for i, start_idx in enumerate(range(0, len(video_data), seg_vid_len)):
-        dst_vid_filename = (
-            f"{vid_filename.replace(args.vid_dir, dst_vid_dir)[:-4]}_{i:02d}.mp4"
-        )
-        dst_aud_filename = dst_vid_filename.replace(".mp4", ".wav")
-        trim_video_data = video_data[start_idx : start_idx + seg_vid_len]
-        trim_audio_data = audio_data[
-            :, start_idx * 640 : (start_idx + seg_vid_len) * 640
-        ]
-        if trim_video_data is None or trim_audio_data is None:
+# csv line: H1ulMfj5wRY,112.320000,116.940000,0.112500,0.345833
+#/home/st392/groups/grp_nlp/nobackup/autodelete/datasets/AVSpeech/datasets/AVspeech/dataTest/H1ulMfj5wRY/H1ulMfj5wRY_112.320000_116.940000_video.mp4
+frames_per_second = 25
+def processSet(setPath,csvPath):
+    with open(csvPath,"r") as f:
+        lines = f.readlines()
+    #take only the job_index-th part of the lines if the lines is divided into groups
+    if groups > 1:
+        unit = math.ceil(len(lines) / groups)
+        lines = lines[job_index * unit : (job_index + 1) * unit]
+    for line in tqdm(lines):
+        line = line.strip().split(",")
+        videoId, start, end, x, y = line
+        
+        x,y = float(x),float(y)
+        videoPath = setPath/f"{videoId}/{videoId}_{start}_{end}_video.mp4"
+        savePath = videoPath.parent/(videoPath.stem+"_cropped.mp4")
+        if savePath.exists():
             continue
-        video_length = len(trim_video_data)
-        audio_length = trim_audio_data.size(1)
-        if (
-            audio_length / video_length < 560.0
-            or audio_length / video_length > 720.0
-            or video_length < 12
-        ):
+        audioPath = setPath/f"{videoId}/{videoId}_{start}_{end}_audio.mp3"
+        if not audioPath.exists():
             continue
+        #load in audio and resample to 16kHz if not already
+        try:
+            audio, sampleRate = torchaudio.load(str(audioPath))
+        except:
+           print(f"Error in {audioPath}")
+           continue
+        if sampleRate != 16000:
+            audio = torchaudio.transforms.Resample(sampleRate,16000)(audio)
+            torchaudio.save(audioPath,audio,16000)
+        if not videoPath.exists():
+            continue            
+        try:
+            video_data = vid_dataloader.load_data(str(videoPath), landmarks=None, transform=True,selectedFace=(x,y))
+        except:
+            print(f"Error in {videoPath}")
+            continue
+        torchvision.io.write_video(str(savePath), video_data, frames_per_second)
+        videoPath.unlink()
 
-        # Save video and audio
-        save_vid_aud(
-            dst_vid_filename,
-            dst_aud_filename,
-            trim_video_data,
-            trim_audio_data,
-            video_fps=25,
-            audio_sample_rate=16000,
-        )
-
-        # Merge video and audio
-        if args.combine_av:
-            in1 = ffmpeg.input(dst_vid_filename)
-            in2 = ffmpeg.input(dst_aud_filename)
-            out = ffmpeg.output(
-                in1["v"],
-                in2["a"],
-                dst_vid_filename[:-4] + ".m.mp4",
-                vcodec="copy",
-                acodec="aac",
-                strict="experimental",
-                loglevel="panic",
-            )
-            out.run()
-            os.remove(dst_aud_filename)
-            os.remove(dst_vid_filename)
-            shutil.move(dst_vid_filename[:-4] + ".m.mp4", dst_vid_filename)
-            
-print(f"Failed: {failed} out of {len(files_to_process)}")  
+processSet(trainSet,trainCsv)

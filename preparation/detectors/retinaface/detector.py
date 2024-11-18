@@ -8,7 +8,7 @@ import warnings
 
 from ibug.face_alignment import FANPredictor
 from ibug.face_detection import RetinaFacePredictor
-
+from tqdm import tqdm
 warnings.filterwarnings("ignore")
 
 
@@ -21,7 +21,8 @@ class LandmarksDetector:
         )
         self.landmark_detector = FANPredictor(device=device, model=None)
 
-    def __call__(self, video_frames):
+    def __call__(self, video_frames,selectedFace=None):
+        #selected face is the x,y coordinates of the face to be selected normalized from 0 to 1
         landmarks = []
         for frame in video_frames:
             detected_faces = self.face_detector(frame, rgb=False)
@@ -29,10 +30,20 @@ class LandmarksDetector:
             if len(detected_faces) == 0:
                 landmarks.append(None)
             else:
-                max_id, max_size = 0, 0
+                chosen_id, max_size = 0, 0
+                if selectedFace is not None:
+                    closestDist = 1000
                 for idx, bbox in enumerate(detected_faces):
                     bbox_size = (bbox[2] - bbox[0]) + (bbox[3] - bbox[1])
-                    if bbox_size > max_size:
-                        max_id, max_size = idx, bbox_size
-                landmarks.append(face_points[max_id])
+                    center = (bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2
+                    #normalize center from 0 to 1
+                    center = center[0] / frame.shape[1], center[1] / frame.shape[0]
+                    if selectedFace is not None:
+                        dist = (center[0]-selectedFace[0])**2 + (center[1]-selectedFace[1])**2
+                        if dist < closestDist:
+                            closestDist = dist
+                            chosen_id = idx
+                    elif bbox_size > max_size:
+                        chosen_id, max_size = idx, bbox_size
+                landmarks.append(face_points[chosen_id])
         return landmarks

@@ -32,7 +32,30 @@ def load_audio(path):
     """
     rtype: torch, T x 1
     """
-    waveform, sample_rate = torchaudio.load(path[:-4] + ".wav", normalize=True)
+    if path[-4:] == ".mp4":
+        waveform, sample_rate = torchaudio.load(path[:-4] + ".wav", normalize=True)
+        if sample_rate != 16000:
+            waveform = torchaudio.transforms.Resample(orig_freq=sample_rate, new_freq=16000)(waveform)
+            sample_rate = 16000
+            #save the resampled audio
+            torchaudio.save(path[:-4] + ".wav", waveform, 16000)
+    else:
+        waveform, sample_rate = torchaudio.load(path, normalize=True)
+        if sample_rate != 16000:
+            waveform = torchaudio.transforms.Resample(orig_freq=sample_rate, new_freq=16000)(waveform)
+            sample_rate = 16000
+            #save the resampled audio
+            torchaudio.save(path, waveform, 16000)
+    #if stereo, convert to mono
+    if waveform.shape[0] == 2:
+        waveform = waveform.mean(0, keepdim=True)
+
+
+    if len(waveform.shape) == 1:
+        print(f"Warning: {path} is only one channel")
+        waveform = waveform.unsqueeze(0)
+        
+
     return waveform.transpose(1, 0)
 
 
@@ -46,28 +69,40 @@ class AVDataset(torch.utils.data.Dataset):
         audio_transform,
         video_transform,
         rate_ratio=640,
+        lowResource=False
     ):
 
         self.root_dir = root_dir
 
         self.modality = modality
         self.rate_ratio = rate_ratio
-
+        self.lowResource = lowResource
         self.list = self.load_list(label_path)
-
+        if "WildVSR" in self.list[0][0]:   
+            self.modality = "video"
         self.audio_transform = audio_transform
         self.video_transform = video_transform
 
     def load_list(self, label_path):
         paths_counts_labels = []
         for path_count_label in open(label_path).read().splitlines():
+            if len(path_count_label.split(",")) != 4:
+                print("error on: ", path_count_label)
+                continue
             dataset_name, rel_path, input_length, token_id = path_count_label.split(",")
             if self.modality == "audiovisual":
-                # if ("trainval" in rel_path and "lrs3" in dataset_name) or "test" in rel_path:
-                if  "lrs3" in dataset_name or "test" in rel_path:
-                    modalities = ["audiovisual"]
+                if not self.lowResource:
+                    if "WildVSR" in dataset_name:
+                        modalities = ["video"]
+                    elif  "lrs3" in dataset_name or ".mp4" in rel_path:
+                        modalities = ["audiovisual"]
+                    else:
+                        modalities = ["audio"]
                 else:
-                    modalities = ["audio"]
+                    if "lrs3" in dataset_name or "test" in rel_path:
+                        modalities = ["audiovisual"]
+                    else:
+                        modalities = ["audio"]
                 for modality in modalities:
                     paths_counts_labels.append(
                         (
@@ -103,18 +138,8 @@ class AVDataset(torch.utils.data.Dataset):
         return paths_counts_labels
 
     def __getitem__(self, idx):
-        if self.modality == "audiovisual":
-            return self.getitem_audiovisual(idx)
-        dataset_name, rel_path, input_length, token_id = self.list[idx]
-        path = os.path.join(self.root_dir, dataset_name, rel_path)
-        if self.modality == "video":
-            video = load_video(path)
-            video = self.video_transform(video)
-            return {"input": video, "target": token_id}
-        elif self.modality == "audio":
-            audio = load_audio(path)
-            audio = self.audio_transform(audio)
-            return {"input": audio, "target": token_id}
+        return self.getitem_audiovisual(idx)
+
 
     def getitem_audiovisual(self, idx):
         dataset_name, rel_path, input_length, token_id, modality = self.list[idx]
@@ -128,13 +153,26 @@ class AVDataset(torch.utils.data.Dataset):
             video = load_video(path)
             video = self.video_transform(video)
         if "audio" in modality:
-            if not Path(path[:-4] + ".wav").exists():
+            if "video_cropped.mp4" in path:
+                #TODO change these paths to work with just replacing the mp4 with mp3
+                if not Path(path[:-17] + "audio.mp3").exists():
+                    #raise error
+                    print("audio path not exists: ", path[:-4] + ".wav")
+                else:
+                    path = path[:-17] + "audio.mp3"
+            elif ".mp4" in path:
+                if not Path(path[:-4] + ".wav").exists():
+                    #raise error
+                    print("audio path not exists: ", path[:-4] + ".wav")
+            elif not Path(path).exists():
                 #raise error
-                print("audio path not exists: ", path[:-4] + ".wav")
+                print("audio path not exists: ", path)
             audio = load_audio(path)
             audio = self.audio_transform(audio)
         if modality == "audio":
             video = torch.zeros((1, 1, 88, 88))
+        elif modality == "video":
+            audio = torch.zeros((1, 1))
 
         return {"input":{"video": video, "audio": audio}, "target": token_id}
     def __len__(self):

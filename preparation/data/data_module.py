@@ -29,7 +29,7 @@ class AVSRDataLoader:
                 self.landmarks_detector = LandmarksDetector()
                 self.video_process = VideoProcess(convert_gray=convert_gray)
 
-    def load_data(self, data_filename, landmarks=None, transform=True):
+    def load_data(self, data_filename, landmarks=None, transform=True,selectedFace=None):
         if self.modality == "audio":
             audio, sample_rate = self.load_audio(data_filename)
             audio = self.audio_process(audio, sample_rate)
@@ -37,7 +37,10 @@ class AVSRDataLoader:
         if self.modality == "video":
             video = self.load_video(data_filename)
             if not landmarks:
-                landmarks = self.landmarks_detector(video)
+                if selectedFace is not None:
+                    landmarks = self.landmarks_detector(video,selectedFace)
+                else:
+                    landmarks = self.landmarks_detector(video)
             video = self.video_process(video, landmarks)
             if video is None:
                 raise TypeError("video cannot be None")

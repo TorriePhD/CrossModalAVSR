@@ -46,7 +46,7 @@ assert (
 # Create the filename template for label files
 label_template = os.path.join(
     args.root_dir,
-    "labelsMedium",
+    "labels",
     f"{dataset}_{subset}_transcript_lengths_seg{seg_duration}s.{args.groups}",
 )
 
@@ -61,8 +61,9 @@ for job_index in range(args.groups):
 # Write the merged labels to a new file
 dst_label_filename = os.path.join(
     args.root_dir,
-    "labelsMedium",
-    f"{dataset}_{subset}_transcript_lengths_seg{seg_duration}s.csv",
+    "labels",
+    #/home/st392/groups/grp_nlp/nobackup/autodelete/datasets/AVSpeech/datasets/labels/AVspeech_train_transcript_lengths_seg_sampledRight_24s.401.0.csv
+    f"{dataset}_{subset}_transcript_lengths_seg_sampledRight_{seg_duration}s.csv",
 )
 
 with open(dst_label_filename, "w") as file:

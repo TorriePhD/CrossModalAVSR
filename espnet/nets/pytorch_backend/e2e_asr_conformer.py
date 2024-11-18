@@ -317,17 +317,22 @@ class E2E(torch.nn.Module):
     def getAllModalFeatures(self,x,lengths=None,label=None):
         #get audioOnlyMask as indicated where x['video'] is all zeros
         audioOnlyMask = x['video'].sum(dim=(1,2,3,4)) == 0
+        videoOnlyMask = x['audio'].sum(dim=(1,2)) == 0
+        videoOtherMask = x['audio'].sum(dim=(1,2)) != 0
         otherMask = x['video'].sum(dim=(1,2,3,4)) != 0
         audioOnlyCount = audioOnlyMask.sum()
+        videoOnlyCount = videoOnlyMask.sum()
+        videoOtherCount = videoOtherMask.sum()
         otherCount = otherMask.sum()
-        # audioOnlyBatch = False
+        audioOnlyBatch = False
+        videoOnlyBatch = False
+        if videoOtherCount == 0:
+            videoOnlyBatch = True
         if otherCount == 0:
-            print("still getting this!!!")
-            raise ValueError("No video data present in batch")
-            # audioOnlyBatch = True
-            # otherMask[0] = True
-            # otherCount += 1
-            # audioOnlyCount -= 1
+            audioOnlyBatch = True
+            otherMask[0] = True
+            otherCount += 1
+            audioOnlyCount -= 1
         if lengths is not None:
             padding_mask = {}
             for key in lengths.keys():
@@ -349,9 +354,10 @@ class E2E(torch.nn.Module):
         modalities = torch.cat((torch.zeros(otherCount, dtype=torch.long, device=x["video"].device),
                                 torch.ones(otherCount+audioOnlyCount, dtype=torch.long, device=x["video"].device),
                                 torch.ones(otherCount, dtype=torch.long, device=x["video"].device)+1))
-        
         for modality in ["audio", "video"]:
             if modality == "audio":
+                if videoOnlyBatch:
+                    continue
                 indexes = modalities == 1
                 video = None
                 audio = x["audio"].clone()
@@ -363,9 +369,10 @@ class E2E(torch.nn.Module):
                 continue
             enc_feat[indexes] = self.getSingleModalFeatures(video, audio, modality, padding_mask, vidSize, )
         videoFeat = enc_feat[modalities==0].clone()
-        audioFeat = enc_feat[modalities==1].clone()[otherMask]
+        if not videoOnlyBatch:
+            audioFeat = enc_feat[modalities==1].clone()[otherMask]
         indexes = modalities == 2
-        if sum(indexes) > 0:
+        if sum(indexes) > 0 and not videoOnlyBatch:
             enc_feat[indexes] = self.getCombinedFeatures(videoFeat, audioFeat)
         # ctc loss
         #repeat label 3 times
@@ -373,8 +380,8 @@ class E2E(torch.nn.Module):
             vidSize = enc_feat.size(1)
         if label is not None:
             otherLabels = label[otherMask]
-            # if audioOnlyBatch:
-            #     otherLabels[0] = 0
+            if audioOnlyBatch:
+                otherLabels[0] = 0
             label = torch.cat((otherLabels,label,otherLabels), dim=0) #resume here
             
         if lengths is not None:

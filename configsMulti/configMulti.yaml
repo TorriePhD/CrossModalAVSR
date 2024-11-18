@@ -1,0 +1,29 @@
+defaults:
+  - _self_
+  - data: default
+  - model: default
+  - optimizer: adamw
+  - trainer: train
+  - decode: default
+  - override hydra/hydra_logging: disabled
+  - override hydra/job_logging: disabled
+hydra:  
+  output_subdir: null  
+  run:  
+    dir: .
+exp_dir:
+exp_name:
+gpus: 
+slurm_job_id:
+file_path:
+index:
+crop: True
+ckpt_path:
+pretrained_model_path:
+pretrained_LM_path:
+LMBeams: 1
+useLMScorer: False
+transfer_frontend:
+transfer_encoder:
+resume_from_checkpoint:
+

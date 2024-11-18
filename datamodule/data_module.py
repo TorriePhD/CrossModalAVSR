@@ -112,6 +112,7 @@ class DataModule(LightningDataModule):
             modality=self.cfg.data.modality,
             audio_transform=AudioTransform("train"),
             video_transform=VideoTransform("train"),
+            lowResource=self.cfg.data.lowResource,
         )
         sampler = ByFrameCountSampler(train_ds, self.cfg.data.max_frames,modality = self.modality)
         if self.total_gpus > 1:
