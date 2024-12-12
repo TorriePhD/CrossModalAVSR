@@ -23,6 +23,7 @@ pretrained_model_path:
 pretrained_LM_path:
 LMBeams: 1
 useLMScorer: False
+lmWeight: 0.3
 transfer_frontend:
 transfer_encoder:
 resume_from_checkpoint:

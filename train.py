@@ -43,7 +43,7 @@ def main(cfg):
     datamodule = DataModule(cfg)
     #get name of exp_dir
     exp_dir_name = os.path.basename(os.path.normpath(cfg.exp_dir))
-    logger = TensorBoardLogger(save_dir=str(Path(cfg.exp_dir).parent), name=exp_dir_name, log_graph=True,version=cfg.exp_name)
+    logger = TensorBoardLogger(save_dir=str(Path(cfg.exp_dir).parent/"lightning_logs"), name=exp_dir_name, log_graph=True,version=cfg.exp_name)
     trainer = Trainer(
         **cfg.trainer,
         logger=logger,

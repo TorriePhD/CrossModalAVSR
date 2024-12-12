@@ -141,9 +141,11 @@ class ModelModule(LightningModule):
                 elif self.cfg.data.modality == "audiovisual":
                     #check if any start with audioEncoder. is in the ckpt
                     if len([k for k, v in ckpt.items() if k.startswith("audioFrontEnd.")]) > 0:
+                        print("loading whole model")
                         self.model.load_state_dict(ckpt, strict=True)
                     else:
                         #load video encoder remove encoder. prefix
+                        print("loading only part of the model")
                         tmp_ckpt = {k.replace("encoder.", ""): v for k, v in ckpt.items() if k.startswith("encoder.")}
                         self.model.videoEncoder.load_state_dict(tmp_ckpt, strict=True)
                         #load decoder
@@ -185,7 +187,7 @@ class ModelModule(LightningModule):
             sample["input"]["video"] = sample["input"]["video"].unsqueeze(0)
             enc_feat, _, _, _, modalities = self.model.getAllModalFeatures(sample["input"])
             modalityOptions = ["video","audio","audiovisual"]
-            self.beam_search = get_beam_search_decoder(self.model, self.token_list,LMScorer=self.LMScorer)
+            self.beam_search = get_beam_search_decoder(self.model, self.token_list,LMScorer=self.LMScorer,lmWeight=self.cfg.lmWeight)
             token_id = sample["target"]
             actual = self.text_transform.post_process(token_id)
             for i in range(len(modalityOptions)):
@@ -283,7 +285,7 @@ class ModelModule(LightningModule):
             self.total_length = 0
 
         self.text_transform = TextTransform()
-        self.beam_search = get_beam_search_decoder(self.model, self.token_list,LMScorer=self.LMScorer)
+        self.beam_search = get_beam_search_decoder(self.model, self.token_list,LMScorer=self.LMScorer,lmWeight=self.cfg.lmWeight)
 
     def on_test_epoch_end(self):
         if self.cfg.data.modality == "audiovisual":
@@ -293,7 +295,7 @@ class ModelModule(LightningModule):
             self.log("wer", self.total_edit_distance / self.total_length)
 
 
-def get_beam_search_decoder(model, token_list, ctc_weight=0.1, beam_size=40,LMScorer=None):
+def get_beam_search_decoder(model, token_list, ctc_weight=0.1, beam_size=40,LMScorer=None,lmWeight=0.3):
     scorers = {
         "decoder": model.decoder,
         "ctc": CTCPrefixScorer(model.ctc, model.eos),
@@ -309,7 +311,7 @@ def get_beam_search_decoder(model, token_list, ctc_weight=0.1, beam_size=40,LMSc
     }
     if LMScorer is not None:
         scorers["lm"] = LMScorer
-        weights["lm"] = 0.3
+        weights["lm"] = lmWeight
     return BatchBeamSearch(
         beam_size=beam_size,
         vocab_size=len(token_list),

@@ -15,11 +15,11 @@ class AVSRDataLoader:
     def __init__(self, modality, detector="retinaface", convert_gray=True):
         self.modality = modality
         if modality == "video":
+            self.device = "cuda" if torch.cuda.is_available() else "cpu"
             if detector == "retinaface":
                 from detectors.retinaface.detector import LandmarksDetector
                 from detectors.retinaface.video_process import VideoProcess
-
-                self.landmarks_detector = LandmarksDetector(device="cpu")
+                self.landmarks_detector = LandmarksDetector(device=self.device)
                 self.video_process = VideoProcess(convert_gray=convert_gray)
 
             if detector == "mediapipe":

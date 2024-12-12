@@ -317,8 +317,9 @@ class E2E(torch.nn.Module):
     def getAllModalFeatures(self,x,lengths=None,label=None):
         #get audioOnlyMask as indicated where x['video'] is all zeros
         audioOnlyMask = x['video'].sum(dim=(1,2,3,4)) == 0
-        videoOnlyMask = x['audio'].sum(dim=(1,2)) == 0
-        videoOtherMask = x['audio'].sum(dim=(1,2)) != 0
+        videoOnlyMask = torch.all(torch.isclose(x['audio'], torch.zeros_like(x['audio']), atol=1e-11), dim=1)
+        videoOtherMask = torch.all(torch.isclose(x['audio'], torch.zeros_like(x['audio']), atol=1e-11), dim=1)
+        videoOtherMask = ~videoOtherMask
         otherMask = x['video'].sum(dim=(1,2,3,4)) != 0
         audioOnlyCount = audioOnlyMask.sum()
         videoOnlyCount = videoOnlyMask.sum()
