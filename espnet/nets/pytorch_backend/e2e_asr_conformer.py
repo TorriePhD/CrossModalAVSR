@@ -187,15 +187,21 @@ class E2E(torch.nn.Module):
         concat_after = False
         macaron_style = args.macaron_style
         positionwise_layer = PositionwiseFeedForward
-
+        ffn = positionwise_layer(*positionwise_layer_args)
+        ffn_norm = LayerNorm(attention_dim)
+        ffn_macaron = positionwise_layer(*positionwise_layer_args)
+        ffn_norm_macaron = LayerNorm(attention_dim)
         return repeat(
             num_blocks,
             lambda: EncoderLayer(
                 attention_dim,
                 encoder_attn_layer(*encoder_attn_layer_args),
-                positionwise_layer(*positionwise_layer_args),
+                ffn,
+                ffn_macaron,
                 convolution_layer(*convolution_layer_args) if use_cnn_module else None,
                 dropout_rate,
+                ffn_norm,
+                ffn_norm_macaron,
                 normalize_before,
                 concat_after,
                 macaron_style,

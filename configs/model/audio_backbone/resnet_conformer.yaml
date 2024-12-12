@@ -1,6 +1,6 @@
 adim: 768
 aheads: 12
-eunits: 3072
+eunits: 46125
 elayers: 12
 transformer_input_layer: conv1d
 dropout_rate: 0.1

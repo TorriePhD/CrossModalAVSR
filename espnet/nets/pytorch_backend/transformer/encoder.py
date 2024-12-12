@@ -136,13 +136,13 @@ class Encoder(torch.nn.Module):
 
         convolution_layer = ConvolutionModule
         convolution_layer_args = (attention_dim, cnn_module_kernel)
-
+        ffn = positionwise_layer(*positionwise_layer_args)
         self.encoders = repeat(
             num_blocks,
             lambda: EncoderLayer(
                 attention_dim,
                 encoder_attn_layer(*encoder_attn_layer_args),
-                positionwise_layer(*positionwise_layer_args),
+                ffn,
                 convolution_layer(*convolution_layer_args) if use_cnn_module else None,
                 dropout_rate,
                 normalize_before,
