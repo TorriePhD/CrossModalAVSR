@@ -6,7 +6,7 @@
 import logging
 import numpy
 import torch
-
+import torch.nn.functional as F
 from espnet.nets.pytorch_backend.ctc import CTC
 from espnet.nets.pytorch_backend.nets_utils import (
     make_non_pad_mask,
@@ -38,7 +38,7 @@ from espnet.nets.pytorch_backend.transformer.encoder_layer import EncoderLayer
 from espnet.nets.pytorch_backend.transformer.layer_norm import LayerNorm
 from espnet.nets.pytorch_backend.transformer.positionwise_feed_forward import PositionwiseFeedForward
 from espnet.nets.pytorch_backend.transformer.repeat import repeat
-
+from fairseq.checkpoint_utils import load_model_ensemble
 class E2E(torch.nn.Module):
     def __init__(self, odim, args, ignore_id=-1):
         torch.nn.Module.__init__(self)
@@ -105,12 +105,52 @@ class E2E(torch.nn.Module):
             )
             self.adim = args["visual_backbone"].adim
             self.mtlalpha = args["visual_backbone"].mtlalpha
+            self.modalities = ["video", "audio", "audiovisual"]
             if args["visual_backbone"].mtlalpha > 0.0:
                 self.ctc = CTC(
                     odim, args["visual_backbone"].adim, args["visual_backbone"].dropout_rate, ctc_type=args["visual_backbone"].ctc_type, reduce=True
                 )
             else:
-                self.ctc = None                
+                self.ctc = None   
+            self.audioReconstructionModalities = ["video"]
+            if args["audio_backbone"].audio_reconstruction:
+                self.audioReconstructionModalities += ["audio"]
+            if args["visual_backbone"].audio_visual_reconstruction:
+                self.audioReconstructionModalities += ["audiovisual"]
+            if args["audio_backbone"].codec is None:
+                self.codec = None
+            elif "vq" in args["audio_backbone"].codec.lower():
+                wav2vec, metadata = load_model_ensemble(["/workspace/vq-wav2vec_kmeans.pt"])
+                self.wav2vec = wav2vec[0].requires_grad_(False).eval()
+                self.audio_alignment = 4
+                self.audio_vocab_size = metadata.model.vq_vars # 320
+                self.video_classifier = torch.nn.Linear(768, self.audio_alignment * metadata.model.vq_groups * self.audio_vocab_size) # 768 -> 4 * 2 * 320
+                # self.audio_classifier = torch.nn.Linear(768, self.audio_alignment * metadata.model.vq_groups * self.audio_vocab_size) # 768 -> 4 * 2 * 320
+                self.audio_weight = args["audio_backbone"].audio_weight
+                self.codec = "vq"
+            elif "wav2vec2" in args["audio_backbone"].codec.lower():
+                # facebook/wav2vec2-large-xlsr-53 is multilingual neural audio quantizer. 
+                # We used facebook/wav2vec2-large-960h for English and kehanlu/mandarin-wav2vec2 for Mandarin.
+                wav2vec = Wav2Vec2ForPreTraining.from_pretrained("facebook/wav2vec2-large-xlsr-53")
+                del wav2vec.wav2vec2.encoder # remove transformer encoder blocks
+                wav2vec = wav2vec.requires_grad_(False).eval()
+                codevectors = torch.arange(wav2vec.quantizer.codevectors.size(1))
+                codevectors = codevectors.view(1, -1, 1).expand_as(wav2vec.quantizer.codevectors)
+                wav2vec.quantizer.codevectors.data = codevectors.float()
+                self.wav2vec = wav2vec
+                self.audio_alignment = 2
+                self.audio_vocab_size = 640
+                self.video_classifier = torch.nn.Linear(768, self.audio_alignment * 2 * self.audio_vocab_size) # 768 -> 4 * 2 * 320
+                # self.audio_classifier = nn.Linear(768, self.audio_alignment * 2 * self.audio_vocab_size)
+                self.audio_weight = args.audio_weight
+                self.codec = "wav2vec2"
+            else:
+                self.codec = None
+            if self.codec is not None:
+                print(f"using {self.codec} neural audio codec")
+            else:
+                print("Inference purpose only, not using codec")
+                print("To train with our method, you should set codec as 'wav2vec2' or 'vq'")             
         else:
             self.encoder = self.createEncoder(args)
             self.transformer_input_layer = args.transformer_input_layer
@@ -150,6 +190,20 @@ class E2E(torch.nn.Module):
                 )
             else:
                 self.ctc = None
+    def forward_audio_reconstruction(self, audios: torch.Tensor) -> torch.Tensor:
+        # add extra 640 padding for audios to prevent mismatch error. Extra margin will be truncated later
+        extra_padding = torch.zeros(audios.size(0), 8000).to(audios.device) # 0.5 sec
+        audios = torch.cat([audios, extra_padding], axis=-1)
+        if self.codec == None or "vq" in self.codec.lower():
+            audio_tokens = self.wav2vec.feature_extractor(audios)
+            audio_tokens = self.wav2vec.vector_quantizer.forward_idx(audio_tokens)[1]
+            return audio_tokens
+        elif "wav2vec2" in self.codec.lower():
+            # extract features from raw waveform.
+            feats = self.wav2vec.wav2vec2.feature_extractor(audios).transpose(1, 2)
+            _, feats = self.wav2vec.wav2vec2.feature_projection(feats)
+            indices = self.wav2vec.quantizer(feats)[0].unflatten(-1, (2, -1))[..., 0].long()
+            return indices
 
     def createEncoders(self, args):
         encoder_attn_layer_type = args.transformer_encoder_attn_layer_type
@@ -250,7 +304,6 @@ class E2E(torch.nn.Module):
     def getAudioFeatures(self, audio, vidSize,padding_mask=None,):
         if len(audio.size()) == 2:
             audio = audio.unsqueeze(0)
-        # xAudio,_ = self.audioEncoder(audio, padding_mask)
         xAudio = self.audioFrontEnd(audio)
         xAudio = self.audioEmbed(xAudio)
         mask = padding_mask
@@ -266,7 +319,6 @@ class E2E(torch.nn.Module):
             xAudio = torch.nn.functional.pad(xAudio, (0, 0, 0, size - xAudio.size(1)), "constant")
         return xAudio
     def getVideoFeatures(self, video, padding_mask=None):
-        # xVideo,_ = self.videoEncoder(video, padding_mask)
         xVideo = self.videoFrontEnd(video)
         xVideo = self.videoEmbed(xVideo)
         mask =  padding_mask
@@ -304,16 +356,6 @@ class E2E(torch.nn.Module):
             xAud = self.getAudioFeatures(audio, video.size(1), padding_mask["audio"])
             x_combined = self.getCombinedFeatures(xVid, xAud)
             return x_combined
-    def getModalities(self, x):
-        modality = torch.zeros(x['video'].size(0), dtype=torch.long, device=x["video"].device)
-        # Determine modality by where video and audio are present (all zeros if not present)
-        #check if video is all zeros
-        whereVideo = x['video'].sum(dim=(1,2,3,4)) != 0
-        whereAudio = x['audio'].sum(dim=(1,2)) != 0
-        modality[whereVideo] = 0
-        modality[whereAudio] = 1
-        modality[whereVideo & whereAudio] = 2
-        return modality
     def getAllModalFeatures(self,x,lengths=None,label=None):
         #get audioOnlyMask as indicated where x['video'] is all zeros
         audioOnlyMask = x['video'].sum(dim=(1,2,3,4)) == 0
@@ -350,7 +392,6 @@ class E2E(torch.nn.Module):
             vidSize = torch.div(x["audio"].size(1), 640, rounding_mode="trunc")
         else:
             vidSize = x["video"].size(1)
-        # modalities = self.getModalities(x)
         enc_feat = torch.zeros(audioOnlyCount+otherCount*3, vidSize, self.adim, device=x["video"].device)
         modalities = torch.cat((torch.zeros(otherCount, dtype=torch.long, device=x["video"].device),
                                 torch.ones(otherCount+audioOnlyCount, dtype=torch.long, device=x["video"].device),
@@ -394,10 +435,27 @@ class E2E(torch.nn.Module):
             padding_mask["video"] = make_non_pad_mask(lengths["video"]).to(x["video"].device).unsqueeze(-2)
             # padding_mask["video"] = torch.cat(( padding_mask["video"],padding_mask["video"],padding_mask["video"]), dim=0)
             # padding_mask["audio"] = torch.cat((padding_mask["audio"], padding_mask["video"],padding_mask["video"]), dim=0)
-        return enc_feat, lengths, padding_mask, label, modalities
+        return enc_feat, lengths, padding_mask, label, modalities,~audioOnlyMask
     def forward_crossmodal(self, x, lengths, label):
-        enc_feat, lengths, padding_mask, label, modalities = self.getAllModalFeatures(x,lengths,label)
-        
+        enc_feat, lengths, padding_mask, label, modalities,audio_visualMask = self.getAllModalFeatures(x,lengths,label)
+        if self.codec is not None:
+            loss_audio = 0
+            audios = x["audio"][audio_visualMask]
+            if audios.size(0) != 0:
+                audios = audios.squeeze(2)
+                for modality in self.audioReconstructionModalities:
+                    modalityIndex = self.modalities.index(modality)
+                    features = enc_feat[modalities==modalityIndex]
+                    audio_tokens = self.forward_audio_reconstruction(audios)
+                    audio_tokens = audio_tokens[:, : features.size(1) * self.audio_alignment]
+                    logits_audio = self.video_classifier(features)
+                    logits_audio = logits_audio.float() # converting into float type before the loss calculation
+                    logits_audio = logits_audio.unflatten(2, (-1, self.audio_vocab_size))
+                    # audio_tokens = audio_tokens.float()
+                    # audio_tokens = audio_tokens.unflatten(2, (-1, self.audio_vocab_size))
+                    loss_audio += F.cross_entropy(logits_audio.flatten(0, 2),audio_tokens.flatten())
+        else:
+            loss_audio = None
         loss_ctcMod, ys_hat = self.ctc(enc_feat, lengths["video"], label)
         loss_ctc = loss_ctcMod
         
@@ -410,7 +468,8 @@ class E2E(torch.nn.Module):
             pred_pad = None
         loss_att = self.criterion(pred_pad, ys_out_pad)
         loss = self.mtlalpha * loss_ctc + (1 - self.mtlalpha) * loss_att
-
+        if self.codec is not None:
+            loss = loss + loss_audio * self.audio_weight
         accAll = th_accuracy(
             pred_pad.view(-1, self.odim), ys_out_pad, ignore_label=self.ignore_id
         )

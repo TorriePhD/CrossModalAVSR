@@ -21,3 +21,6 @@ transformer_length_normalized_loss: False
 mtlalpha: 0.1
 ctc_type: builtin
 rel_pos_type: latest
+audio_weight: 10.0
+codec: vq
+audio_reconstruction: False

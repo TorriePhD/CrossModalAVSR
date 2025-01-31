@@ -142,7 +142,9 @@ class ModelModule(LightningModule):
                     #check if any start with audioEncoder. is in the ckpt
                     if len([k for k, v in ckpt.items() if k.startswith("audioFrontEnd.")]) > 0:
                         print("loading whole model")
-                        self.model.load_state_dict(ckpt, strict=True)
+                        #remove wav2vec  and audio_classifier parameters
+                        tmp_ckpt = {k: v for k, v in ckpt.items() if not "audio_classifier" in k and not "wav2vec" in k}
+                        self.model.load_state_dict(tmp_ckpt, strict=True)
                     else:
                         #load video encoder remove encoder. prefix
                         print("loading only part of the model")
@@ -185,7 +187,7 @@ class ModelModule(LightningModule):
         if self.cfg.data.modality == "audiovisual": 
             sample["input"]["audio"] = sample["input"]["audio"].unsqueeze(0)
             sample["input"]["video"] = sample["input"]["video"].unsqueeze(0)
-            enc_feat, _, _, _, modalities = self.model.getAllModalFeatures(sample["input"])
+            enc_feat, _, _, _, modalities, _ = self.model.getAllModalFeatures(sample["input"])
             modalityOptions = ["video","audio","audiovisual"]
             self.beam_search = get_beam_search_decoder(self.model, self.token_list,LMScorer=self.LMScorer,lmWeight=self.cfg.lmWeight)
             token_id = sample["target"]
