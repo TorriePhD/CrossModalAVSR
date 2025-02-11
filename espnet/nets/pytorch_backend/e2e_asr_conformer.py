@@ -50,6 +50,7 @@ class E2E(torch.nn.Module):
         self.odim = odim
         self.ignore_id = ignore_id
         if isinstance(args, dict):
+            self.weightAudioOnlyBatches = args["audio_backbone"].weightAudioOnlyBatches
             self.crossmodal = True
             # self.audioEncoder = self.createEncoder(args["audio_backbone"])
             # self.videoEncoder = self.createEncoder(args["visual_backbone"])
@@ -117,7 +118,7 @@ class E2E(torch.nn.Module):
                 self.audioReconstructionModalities += ["audio"]
             if args["visual_backbone"].audio_visual_reconstruction:
                 self.audioReconstructionModalities += ["audiovisual"]
-            if args["audio_backbone"].codec is None:
+            if args["audio_backbone"].codec is None or "none" in args["audio_backbone"].codec.lower():
                 self.codec = None
             elif "vq" in args["audio_backbone"].codec.lower():
                 wav2vec, metadata = load_model_ensemble(["/workspace/vq-wav2vec_kmeans.pt"])
@@ -435,25 +436,24 @@ class E2E(torch.nn.Module):
             padding_mask["video"] = make_non_pad_mask(lengths["video"]).to(x["video"].device).unsqueeze(-2)
             # padding_mask["video"] = torch.cat(( padding_mask["video"],padding_mask["video"],padding_mask["video"]), dim=0)
             # padding_mask["audio"] = torch.cat((padding_mask["audio"], padding_mask["video"],padding_mask["video"]), dim=0)
-        return enc_feat, lengths, padding_mask, label, modalities,~audioOnlyMask
+        return enc_feat, lengths, padding_mask, label, modalities,otherMask,audioOnlyBatch
     def forward_crossmodal(self, x, lengths, label):
-        enc_feat, lengths, padding_mask, label, modalities,audio_visualMask = self.getAllModalFeatures(x,lengths,label)
+        enc_feat, lengths, padding_mask, label, modalities,audio_visualMask,audioOnlyBatch = self.getAllModalFeatures(x,lengths,label)
         if self.codec is not None:
             loss_audio = 0
             audios = x["audio"][audio_visualMask]
-            if audios.size(0) != 0:
-                audios = audios.squeeze(2)
-                for modality in self.audioReconstructionModalities:
-                    modalityIndex = self.modalities.index(modality)
-                    features = enc_feat[modalities==modalityIndex]
-                    audio_tokens = self.forward_audio_reconstruction(audios)
-                    audio_tokens = audio_tokens[:, : features.size(1) * self.audio_alignment]
-                    logits_audio = self.video_classifier(features)
-                    logits_audio = logits_audio.float() # converting into float type before the loss calculation
-                    logits_audio = logits_audio.unflatten(2, (-1, self.audio_vocab_size))
-                    # audio_tokens = audio_tokens.float()
-                    # audio_tokens = audio_tokens.unflatten(2, (-1, self.audio_vocab_size))
-                    loss_audio += F.cross_entropy(logits_audio.flatten(0, 2),audio_tokens.flatten())
+            audios = audios.squeeze(2)
+            for modality in self.audioReconstructionModalities:
+                modalityIndex = self.modalities.index(modality)
+                features = enc_feat[modalities==modalityIndex]
+                audio_tokens = self.forward_audio_reconstruction(audios)
+                audio_tokens = audio_tokens[:, : features.size(1) * self.audio_alignment]
+                logits_audio = self.video_classifier(features)
+                logits_audio = logits_audio.float() # converting into float type before the loss calculation
+                logits_audio = logits_audio.unflatten(2, (-1, self.audio_vocab_size))
+                # audio_tokens = audio_tokens.float()
+                # audio_tokens = audio_tokens.unflatten(2, (-1, self.audio_vocab_size))
+                loss_audio += F.cross_entropy(logits_audio.flatten(0, 2),audio_tokens.flatten()) #TODO if it is a audio only batch, make this loss lower!!!
         else:
             loss_audio = None
         loss_ctcMod, ys_hat = self.ctc(enc_feat, lengths["video"], label)
@@ -467,7 +467,11 @@ class E2E(torch.nn.Module):
         else:
             pred_pad = None
         loss_att = self.criterion(pred_pad, ys_out_pad)
-        loss = self.mtlalpha * loss_ctc + (1 - self.mtlalpha) * loss_att
+        if audioOnlyBatch and self.weightAudioOnlyBatches:
+            loss_ctc[audio_visualMask] *= 0.001
+            loss_att[audio_visualMask] *= 0.001
+            loss_audio *= 0.001
+        loss = self.mtlalpha * loss_ctc + (1 - self.mtlalpha) * loss_att #If it is a audio only batch, make the visual and audiovisual loss lower!!!
         if self.codec is not None:
             loss = loss + loss_audio * self.audio_weight
         accAll = th_accuracy(
