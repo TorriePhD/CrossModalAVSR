@@ -2,7 +2,7 @@ import math
 import pdb
 
 import torch.nn as nn
-
+import torch
 from espnet.nets.pytorch_backend.transformer.convolution import Swish
 
 
@@ -20,6 +20,7 @@ def conv3x3(in_planes, out_planes, stride=1):
         stride=stride,
         padding=1,
         bias=False,
+        dtype=torch.float16,
     )
 
 
@@ -37,6 +38,7 @@ def downsample_basic_block(inplanes, outplanes, stride):
             kernel_size=1,
             stride=stride,
             bias=False,
+            dtype=torch.float16,
         ),
         nn.BatchNorm2d(outplanes),
     )

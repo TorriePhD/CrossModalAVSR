@@ -16,9 +16,11 @@ ddim: 768
 dheads: 12
 dunits: 3072
 dlayers: 6
+freezeEncoder: True
+freezeDecoder: True
 lsm_weight: 0.1
 transformer_length_normalized_loss: False
-mtlalpha: 0.1
+mtlalpha: 0.0
 ctc_type: builtin
 rel_pos_type: latest
 audio_visual_reconstruction: False

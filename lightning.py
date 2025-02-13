@@ -5,10 +5,11 @@ from datamodule.transforms import TextTransform
 
 from pytorch_lightning import LightningModule
 from espnet.nets.batch_beam_search import BatchBeamSearch
-from espnet.nets.pytorch_backend.e2e_asr_conformer import E2E
+from espnet.nets.pytorch_backend.e2e_whisper import E2E
 from espnet.nets.scorers.length_bonus import LengthBonus
 from espnet.nets.scorers.ctc import CTCPrefixScorer
 from espnet.nets.pytorch_backend.LM.transformer import TransformerLM
+from transformers import AutoProcessor
 
 
 def compute_word_level_distance(seq1, seq2):
@@ -33,8 +34,9 @@ class ModelModule(LightningModule):
             self.backbone_args["visual_backbone"] = self.cfg.model.visual_backbone
             self.backbone_args["fusion"] = self.cfg.model.fusion
 
-        self.text_transform = TextTransform()
-        self.token_list = self.text_transform.token_list
+        model_id = "openai/whisper-tiny.en"
+        self.text_transform = AutoProcessor.from_pretrained(model_id).tokenizer
+        self.token_list = self.text_transform.get_vocab()
         self.model = E2E(len(self.token_list), self.backbone_args)
         self.LMScorer = None
         if cfg.useLMScorer:
@@ -285,8 +287,8 @@ class ModelModule(LightningModule):
         else:
             self.total_edit_distance = 0
             self.total_length = 0
-
-        self.text_transform = TextTransform()
+        model_id = "openai/whisper-tiny.en"
+        self.text_transform = AutoProcessor.from_pretrained(model_id)
         self.beam_search = get_beam_search_decoder(self.model, self.token_list,LMScorer=self.LMScorer,lmWeight=self.cfg.lmWeight)
 
     def on_test_epoch_end(self):

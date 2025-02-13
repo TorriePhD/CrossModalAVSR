@@ -26,16 +26,19 @@ class Conv3dResNet(torch.nn.Module):
         :param relu_type: str, activation function used in an audio front-end.
         """
         super(Conv3dResNet, self).__init__()
+        #make dtype float16
         self.frontend_nout = 64
         self.trunk = ResNet(BasicBlock, [2, 2, 2, 2], relu_type=relu_type)
         self.frontend3D = nn.Sequential(
             nn.Conv3d(
-                1, self.frontend_nout, (5, 7, 7), (1, 2, 2), (2, 3, 3), bias=False
+                1, self.frontend_nout, (5, 7, 7), (1, 2, 2), (2, 3, 3), bias=False, dtype=torch.float16
             ),
             nn.BatchNorm3d(self.frontend_nout),
             Swish(),
             nn.MaxPool3d((1, 3, 3), (1, 2, 2), (0, 1, 1)),
         )
+        
+
 
     def forward(self, xs_pad):
         xs_pad = xs_pad.transpose(1, 2)  # [B, T, C, H, W] -> [B, C, T, H, W]

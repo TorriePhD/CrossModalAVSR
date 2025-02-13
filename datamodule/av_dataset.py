@@ -58,6 +58,15 @@ def load_audio(path):
 
     return waveform.transpose(1, 0)
 
+def load_audio_logMel(path):
+    #change path's extension to .pt
+    path = str(Path(path).with_suffix(".pt"))
+    if not Path(path).exists():
+        print("audio path not exists: ", path)
+        return None
+    audio = torch.load(path)
+    return audio
+    
 
 class AVDataset(torch.utils.data.Dataset):
     def __init__(
@@ -153,27 +162,14 @@ class AVDataset(torch.utils.data.Dataset):
             video = load_video(path)
             video = self.video_transform(video)
         if "audio" in modality:
-            if "video_cropped.mp4" in path:
-                #TODO change these paths to work with just replacing the mp4 with mp3
-                if not Path(path[:-17] + "audio.mp3").exists():
-                    #raise error
-                    print("audio path not exists: ", path[:-4] + ".wav")
-                else:
-                    path = path[:-17] + "audio.mp3"
-            elif ".mp4" in path:
-                if not Path(path[:-4] + ".wav").exists():
-                    #raise error
-                    print("audio path not exists: ", path[:-4] + ".wav")
-            elif not Path(path).exists():
-                #raise error
-                print("audio path not exists: ", path)
-            audio = load_audio(path)
-            audio = self.audio_transform(audio)
+            audio = load_audio_logMel(path)
         if modality == "audio":
             video = torch.zeros((1, 1, 88, 88))
         elif modality == "video":
             audio = torch.zeros((1, 1))
-
+        #make all torch.float16
+        video = video.half()
+        audio = audio.half()
         return {"input":{"video": video, "audio": audio}, "target": token_id}
     def __len__(self):
         return len(self.list)

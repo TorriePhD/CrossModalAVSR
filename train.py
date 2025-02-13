@@ -50,8 +50,8 @@ def main(cfg):
         callbacks=callbacks,
         strategy=DDPStrategy(find_unused_parameters=False)
     )
-
-    trainer.fit(model=modelmodule, datamodule=datamodule, ckpt_path=cfg.resume_from_checkpoint)
+    with torch.autograd.detect_anomaly():
+        trainer.fit(model=modelmodule, datamodule=datamodule, ckpt_path=cfg.resume_from_checkpoint)
     ensemble(cfg)
     # #load ensemble
     state_dict = torch.load(os.path.join(cfg.exp_dir, cfg.exp_name, "model_avg_10.pth"), map_location=lambda storage, loc: storage)

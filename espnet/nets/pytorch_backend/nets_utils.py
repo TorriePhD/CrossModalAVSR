@@ -53,6 +53,8 @@ def pad_list(xs, pad_value):
     """
     n_batch = len(xs)
     max_len = max(x.size(0) for x in xs)
+    if isinstance(pad_value, list):
+        pad_value = pad_value[0]
     pad = xs[0].new(n_batch, max_len, *xs[0].size()[1:]).fill_(pad_value)
 
     for i in range(n_batch):
@@ -507,13 +509,13 @@ class MLPHead(torch.nn.Module):
         super(MLPHead, self).__init__()
         self.norm = norm
 
-        self.fc1 = torch.nn.Linear(idim, hdim)
+        self.fc1 = torch.nn.Linear(idim, hdim,dtype=torch.float16)
         if norm == "batchnorm":
             self.bn1 = torch.nn.BatchNorm1d(hdim)
         elif norm == "layernorm":
             self.norm1 = torch.nn.LayerNorm(hdim)
         self.nonlin1 = torch.nn.ReLU(inplace=True)
-        self.fc2 = torch.nn.Linear(hdim, odim)
+        self.fc2 = torch.nn.Linear(hdim, odim,dtype=torch.float16)
 
     def forward(self, x):
         x = self.fc1(x)
